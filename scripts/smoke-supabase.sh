@@ -30,9 +30,15 @@ pass() { printf "\033[1;32m✓ %s\033[0m\n" "$*"; }
 
 # ─── 1. Sanity check: stack is reachable ──────────────────────────────────
 say "1/5  Reaching $SUPA_URL"
+# Cloud Supabase returns 401 on bare `/rest/v1/`; local returns 200. Either
+# proves the REST gateway is alive and routing — only treat connection-level
+# failures (000, 5xx) as real failures.
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$SUPA_URL/rest/v1/" -H "apikey: $SUPA_ANON")
-[[ "$HTTP" == "200" ]] || fail "REST not reachable (got $HTTP). Did you run 'supabase start'?"
-pass "REST API reachable"
+case "$HTTP" in
+  200|401|404) pass "REST API reachable (HTTP $HTTP)" ;;
+  000)        fail "REST not reachable (no response from $SUPA_URL). Did you run 'supabase start' or unset SUPA_URL?" ;;
+  *)          fail "REST not reachable (got $HTTP). Check $SUPA_URL." ;;
+esac
 
 # ─── 2. Sign up a fresh user ──────────────────────────────────────────────
 say "2/5  Signing up $EMAIL"
