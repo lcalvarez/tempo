@@ -23,29 +23,58 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26 ships Xcode 26.x, matching the dev Mac. macos-15 lagged on
+    # Xcode 16.x which fails to compile our Swift 6 / SDK 26 surface.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      - uses: actions/checkout@v5
 
       - name: Show toolchain
         run: |
+          # Use whatever Xcode the runner ships with; pinning a specific
+          # path (Xcode_16.app) breaks every time GitHub rotates images.
+          # If we ever need to pin, switch to:
+          #   sudo xcode-select -s /Applications/Xcode_26.app
           xcodebuild -version
           xcrun simctl list runtimes | head -20
 
-      # CI doesn't have the gitignored SupabaseConfig.swift. Generate a stub
-      # with the local-default URL/anon-key so the project compiles. This
-      # never connects to a real backend during build.
+      # CI doesn't have the gitignored SupabaseConfig.swift. Generate a
+      # stub with the same shape the bootstrap script writes — the new
+      # generated config has a `useLocal` flag and separate
+      # local/cloud URL/key constants. The simpler "single static let
+      # url" form would still compile (the rest of the app only reads
+      # `SupabaseConfig.url` and `SupabaseConfig.anonKey`), but matching
+      # the real shape avoids a surprise the next time someone adds a
+      # private constant to the bootstrapped file.
       - name: Stub SupabaseConfig.swift
         run: |
           cat > ios/Tempo/Supabase/SupabaseConfig.swift <<'EOF'
+          // CI stub — matches the shape of bootstrap-supabase.sh's output.
           import Foundation
+
           enum SupabaseConfig {
-              static let url: URL        = URL(string: "http://127.0.0.1:54321")!
-              static let anonKey: String = "ci_stub_key"
+              static var url: URL {
+                  #if DEBUG
+                  return useLocal ? localURL : cloudURL
+                  #else
+                  return cloudURL
+                  #endif
+              }
+
+              static var anonKey: String {
+                  #if DEBUG
+                  return useLocal ? localAnonKey : cloudAnonKey
+                  #else
+                  return cloudAnonKey
+                  #endif
+              }
+
+              private static let useLocal: Bool = true
+              private static let localURL    = URL(string: "http://127.0.0.1:54321")!
+              private static let localAnonKey = "ci_stub_local_key"
+              private static let cloudURL    = URL(string: "https://example.supabase.co")!
+              private static let cloudAnonKey = "ci_stub_cloud_key"
           }
           EOF
 
@@ -53,22 +82,27 @@ jobs:
         working-directory: ios
         run: |
           set -o pipefail
-          xcodebuild \
-            -project Tempo.xcodeproj \
-            -scheme Tempo \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-            build | xcbeautify --renderer github-actions || \
-          xcodebuild \
-            -project Tempo.xcodeproj \
-            -scheme Tempo \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+          # Run twice: first piped through xcbeautify for readable
+          # GitHub Actions annotations, falling back to raw xcodebuild
+          # output if xcbeautify isn't available on the runner image.
+          # The actual *build* arguments must match between the two
+          # invocations; if you change one, change both.
+          XCODEBUILD_ARGS=(
+            -project Tempo.xcodeproj
+            -scheme Tempo
+            -configuration Debug
+            -destination 'generic/platform=iOS Simulator'
+            -derivedDataPath build
+            CODE_SIGN_IDENTITY=""
+            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO
             build
+          )
+          if command -v xcbeautify >/dev/null 2>&1; then
+            xcodebuild "${XCODEBUILD_ARGS[@]}" | xcbeautify --renderer github-actions
+          else
+            xcodebuild "${XCODEBUILD_ARGS[@]}"
+          fi
 
 # TODO: add a `test` job once we have XCTest targets. The Tempo.xcodeproj
 # currently has no test target; adding one is a separate piece of work.
