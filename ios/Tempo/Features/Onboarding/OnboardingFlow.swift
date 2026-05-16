@@ -123,20 +123,28 @@ private struct WelcomeScreen: View {
 private struct SignInScreen: View {
     var onContinue: () -> Void
 
+    @State private var showEmailSheet = false
+
     var body: some View {
-        OBScaffold(stepLabel: "Step 1 of 5", title: "Sign in to\nget started", subtitle: nil) {
-            Spacer(minLength: 60)
-            Button(action: onContinue) {
-                HStack {
-                    Image(systemName: "apple.logo").font(.system(size: 18, weight: .medium))
-                    Text("Continue with Apple").font(Theme.Font.sans(15, .semibold))
-                }
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity).frame(height: 56)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        // Two real paths in v1:
+        //   • "Continue with email" → opens the SignInSheet (sign-up
+        //     creates a real auth.users row tied to email; the onboarding
+        //     advances when the sheet closes).
+        //   • "Continue as guest" → the anonymous-sign-in path. The user
+        //     can convert later from Profile → "Save your account".
+        //
+        // Sign in with Apple is intentionally *not* shown here. The
+        // capability + AuthStore method exist, but the onboarding wiring
+        // and Apple Developer Services-ID config aren't done yet, and
+        // shipping a button that does nothing is worse than not shipping
+        // it. We'll add it back in v1.1.
+        OBScaffold(stepLabel: "Step 1 of 5", title: "Sign in to\nget started",
+                   subtitle: "An account keeps your data across reinstalls and on a second device. You can also start as a guest and save later.") {
+            Spacer(minLength: 36)
+
+            PrimaryCTA(title: "Continue with email") {
+                showEmailSheet = true
             }
-            .buttonStyle(PressableStyle())
 
             HStack {
                 Rectangle().fill(Theme.Color.hairline).frame(height: 1)
@@ -145,7 +153,7 @@ private struct SignInScreen: View {
             }
             .padding(.vertical, 4)
 
-            SecondaryCTA(title: "Continue with email", height: 56, action: onContinue)
+            SecondaryCTA(title: "Continue as guest", height: 56, action: onContinue)
 
             Text("By continuing, you agree to our Terms and Privacy Policy.")
                 .font(Theme.Font.sans(12))
@@ -153,6 +161,20 @@ private struct SignInScreen: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
                 .padding(.horizontal, 16)
+        }
+        .sheet(isPresented: $showEmailSheet) {
+            SignInSheet(
+                onClose: {
+                    showEmailSheet = false
+                    // Whether the user signed up or backed out, they've
+                    // had their chance — let onboarding move forward so
+                    // they can finish setup. Worst case (sheet dismissed
+                    // without action) they're still on the anon session
+                    // they had on launch, exactly the "guest" path.
+                    onContinue()
+                },
+                initialMode: .auto
+            )
         }
     }
 }

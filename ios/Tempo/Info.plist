@@ -27,10 +27,18 @@
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
+    <!--
+    Minimal launch screen. UILaunchScreen only supports a background color
+    name + an optional centered image; rendering a real "logo" is more
+    machinery than v1 needs. The named color matches Theme.Color.bg in
+    both light and dark — defined in Assets.xcassets/LaunchBackground —
+    so the user sees a single bg-colored frame instead of the default
+    white flash before SwiftUI takes over.
+    -->
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>
-        <string></string>
+        <string>LaunchBackground</string>
     </dict>
     <key>UIRequiredDeviceCapabilities</key>
     <array>

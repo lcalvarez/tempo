@@ -204,9 +204,19 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showUnpair) {
             UnpairSheet(partnerName: store.partner.name) {
-                store.isPaired = false
-                showUnpair = false
-                store.showToast("Unpaired from \(store.partner.name)", icon: "link.badge.plus")
+                // Snapshot the partner name before the unpair clears it
+                // so the toast still reads correctly.
+                let name = store.partner.name
+                Task {
+                    if let err = await store.unpair() {
+                        store.showToast("Couldn't unpair: \(err)",
+                                        icon: "exclamationmark.triangle.fill")
+                    } else {
+                        store.showToast("Unpaired from \(name)",
+                                        icon: "link.badge.plus")
+                    }
+                    showUnpair = false
+                }
             } onCancel: {
                 showUnpair = false
             }

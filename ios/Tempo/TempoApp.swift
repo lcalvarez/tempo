@@ -79,6 +79,26 @@ struct TempoApp: App {
     }
 
     #if DEBUG
+    /// File-based driver for the unpair path. Tests drop an empty
+    /// `Documents/test-unpair.txt` file (presence is the trigger; the
+    /// content is ignored); the app calls `session.unpair()`, which
+    /// goes through `RemoteSync.unpair()` to delete the partnership row
+    /// and tear down the realtime subscription. Mirrors every other
+    /// `test-*` drain helper.
+    @MainActor
+    private func drainPendingTestUnpair() async {
+        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let path = dir.appendingPathComponent("test-unpair.txt")
+        guard FileManager.default.fileExists(atPath: path.path) else { return }
+        try? FileManager.default.removeItem(at: path)
+        appendDeepLinkLog("test-unpair: requested")
+        if let err = await session.unpair() {
+            appendDeepLinkLog("test-unpair failed: \(err)")
+        } else {
+            appendDeepLinkLog("test-unpair succeeded")
+        }
+    }
+
     /// File-based driver for the email/password link path. Tests drop a
     /// `Documents/test-link-account.json` file with `{email, password}`;
     /// the app calls `linkEmailToCurrentUser`, preserving `auth.uid()` and
@@ -221,6 +241,7 @@ struct TempoApp: App {
                     await drainPendingTestSession()
                     await drainPendingTestCustomExercise()
                     await drainPendingTestLinkAccount()
+                    await drainPendingTestUnpair()
                     #endif
                 }
                 .onOpenURL { url in

@@ -57,12 +57,14 @@ struct PostSessionView: View {
                         .frame(width: 44, height: 44)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("24-day streak").font(.system(size: 17, weight: .semibold)).foregroundColor(Theme.Color.fg)
-                            Text("Longest yet — keep it rolling Wed")
+                            Text(streakHeadline).font(.system(size: 17, weight: .semibold)).foregroundColor(Theme.Color.fg)
+                            Text(streakSubtitle)
                                 .font(Theme.Font.mono(11)).foregroundColor(Theme.Color.fgSoft)
                         }
                         Spacer()
-                        Text("+1").font(.system(size: 22, weight: .semibold).monospacedDigit()).foregroundColor(Theme.Color.fg)
+                        Text(streakDelta)
+                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .foregroundColor(Theme.Color.fg)
                     }
                     .card()
 
@@ -132,6 +134,35 @@ struct PostSessionView: View {
                     .ignoresSafeArea(edges: .bottom)
             )
         }
+    }
+
+    /// Streak headline shown on the post-session card. Reads
+    /// `store.currentStreak` *after* the just-finished session has been
+    /// recorded into history (caller responsibility), so a session that
+    /// extended the streak from 4 → 5 will read "5-day streak".
+    private var streakHeadline: String {
+        let s = store.currentStreak
+        return s == 0 ? "First session logged" : "\(s)-day streak"
+    }
+
+    /// Subtitle line under the streak headline. Goes flavor when the
+    /// streak hits round-number milestones, otherwise stays generic.
+    private var streakSubtitle: String {
+        let s = store.currentStreak
+        switch s {
+        case 0:        return "Welcome to Tempo — keep it rolling tomorrow"
+        case 1:        return "Day one — every streak starts here"
+        case 7, 14, 21, 30, 60, 90, 180, 365:
+                       return "Milestone — \(s) days strong"
+        default:       return "Keep it rolling tomorrow"
+        }
+    }
+
+    /// Right-side delta. `+1` when a session was added today (default
+    /// post-session presentation); blank for the rare path where this
+    /// view renders without an immediately-recorded session.
+    private var streakDelta: String {
+        store.currentStreak == 0 ? "" : "+1"
     }
 
     private func sendReaction(_ emoji: String) {

@@ -18,10 +18,16 @@ struct TodayView: View {
             )
             .padding(.top, 8)
 
+            // Demo-only state switcher. In Release we let the real
+            // session state (computed from history + plan) drive the
+            // shown sub-view; the picker would otherwise be a
+            // confusing god-mode toggle for end users.
+            #if DEBUG
             StatePicker(selection: $store.todayState)
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
                 .padding(.bottom, 8)
+            #endif
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -33,6 +39,8 @@ struct TodayView: View {
                             partner: store.partner,
                             isPaired: store.isPaired,
                             partnerActivity: store.partnerActivity,
+                            streakDays: store.currentStreak,
+                            lastTogether: store.lastTogetherSession,
                             onStart: onStart
                         )
                         .padding(.horizontal, 20)
@@ -51,9 +59,15 @@ struct TodayView: View {
                             .padding(.top, 8)
                     }
 
+                    // Internal-only shortcuts to non-default flows (PR
+                    // moment, post-session, onboarding replay). Hidden
+                    // from Release builds so external TestFlight users
+                    // never see the "Demo routes" header.
+                    #if DEBUG
                     DemoActionsRow(onPR: onPR, onPost: onPost, onOnboarding: onOnboarding)
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
+                    #endif
                 }
                 .padding(.bottom, 24)
             }
@@ -128,6 +142,13 @@ private struct SessionReadyState: View {
     /// the ready state shows a "currently working out" banner that
     /// displaces the regular presence line.
     let partnerActivity: PartnerActivity?
+    /// Real consecutive-day workout streak (computed from `store.history`).
+    /// Passed in instead of read here so this view stays free of
+    /// `@EnvironmentObject` plumbing.
+    let streakDays: Int
+    /// Most recent session that snapshotted a partner title — drives the
+    /// "Last together" card. `nil` when solo or no shared session yet.
+    let lastTogether: CompletedSession?
     var onStart: () -> Void
 
     @State private var showPlanSheet = false
@@ -221,22 +242,18 @@ private struct SessionReadyState: View {
                         Text("Streak").labelStyle()
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(streak())")
+                        Text("\(streakDays)")
                             .font(.system(size: 32, weight: .semibold).monospacedDigit())
                             .foregroundColor(Theme.Color.fg)
-                        Text("days").labelStyle()
+                        Text(streakDays == 1 ? "day" : "days").labelStyle()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .card(tight: true)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Last together").labelStyle()
-                    Text("Push day").font(Theme.Font.sans(14)).foregroundColor(Theme.Color.fg)
-                    Text("Sun · 2 PRs").font(Theme.Font.mono(11)).foregroundColor(Theme.Color.fgSoft).padding(.top, 2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .card(tight: true)
+                lastTogetherCard
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .card(tight: true)
             }
         }
         .sheet(isPresented: $showPlanSheet) {
@@ -251,7 +268,64 @@ private struct SessionReadyState: View {
         }
     }
 
-    private func streak() -> Int { 23 }   // TODO: compute from history dates
+    /// "Last together" card content. Three states:
+    ///
+    ///   • Real shared session in history → title + "<weekday> · N PRs".
+    ///   • Paired but no shared sessions yet → "Not yet · invite them to start".
+    ///   • Solo (no partner) → the card is suppressed at the call site by
+    ///     this builder rendering an empty placeholder so the streak card
+    ///     fills the row width consistently.
+    @ViewBuilder
+    private var lastTogetherCard: some View {
+        if let s = lastTogether {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Last together").labelStyle()
+                Text(s.title)
+                    .font(Theme.Font.sans(14))
+                    .foregroundColor(Theme.Color.fg)
+                    .lineLimit(1)
+                Text("\(weekdayLabel(for: s.date)) · \(s.prCount) PR\(s.prCount == 1 ? "" : "s")")
+                    .font(Theme.Font.mono(11))
+                    .foregroundColor(Theme.Color.fgSoft)
+                    .padding(.top, 2)
+            }
+        } else if isPaired {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Last together").labelStyle()
+                Text("Not yet")
+                    .font(Theme.Font.sans(14))
+                    .foregroundColor(Theme.Color.fg)
+                Text("complete a session to fill this in")
+                    .font(Theme.Font.mono(11))
+                    .foregroundColor(Theme.Color.fgSoft)
+                    .padding(.top, 2)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Solo run").labelStyle()
+                Text("Just you")
+                    .font(Theme.Font.sans(14))
+                    .foregroundColor(Theme.Color.fg)
+                Text("invite a partner from Profile")
+                    .font(Theme.Font.mono(11))
+                    .foregroundColor(Theme.Color.fgSoft)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    /// "Today", "Yesterday", or the short weekday name (e.g. "Sun") for
+    /// dates inside the last week; otherwise a `MMM d` short form.
+    private func weekdayLabel(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date)     { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        let now = Date()
+        let daysAgo = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: cal.startOfDay(for: now)).day ?? 0
+        let f = DateFormatter()
+        f.dateFormat = (0..<7).contains(daysAgo) ? "EEE" : "MMM d"
+        return f.string(from: date)
+    }
 
     private func planHeader(showViewAll: Bool) -> some View {
         Button(action: { showPlanSheet = true }) {
@@ -519,7 +593,7 @@ private struct RestDayState: View {
 
                 HStack(spacing: 6) {
                     Image(systemName: "flame.fill").font(.system(size: 11)).foregroundColor(Theme.Color.pr)
-                    Text("\(max(1, history.count))-day streak — next session Wed")
+                    Text(restDayStreakLine(streak: store.currentStreak))
                         .font(Theme.Font.mono(12))
                         .foregroundColor(Theme.Color.fgMute)
                 }
@@ -589,6 +663,22 @@ private struct RestDayState: View {
     private func timeAgo(_ d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "EEE"
         return f.string(from: d)
+    }
+
+    /// Streak line on the rest-day card. Three shapes:
+    ///
+    ///   • Active streak ("5-day streak — keep it going").
+    ///   • Streak just lapsed (`history` non-empty but `streak == 0`):
+    ///     "Recover well" framing — no number to broadcast.
+    ///   • No history at all: a welcoming first-session prompt.
+    private func restDayStreakLine(streak: Int) -> String {
+        if streak > 0 {
+            return "\(streak)-day streak — keep it rolling"
+        }
+        if history.isEmpty {
+            return "Your first session is on the schedule"
+        }
+        return "Recovery day — fresh start tomorrow"
     }
 }
 

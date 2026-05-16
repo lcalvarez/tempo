@@ -213,6 +213,23 @@ enum SyncStore {
             .value
     }
 
+    /// Tear down a partnership row. RLS on `partnerships` permits either
+    /// side to delete (`auth.uid() in (user_a, user_b)`), so we can call
+    /// this directly with the standard anon JWT — no RPC needed.
+    ///
+    /// The realtime publication on `live_sessions` cascades naturally:
+    /// once the row is gone, neither side can read the other's
+    /// `live_sessions` rows (the RLS policy gates on partnership
+    /// existence), and `RemoteSync` will tear down its subscription on
+    /// the next `partnerUserId` change.
+    static func deletePartnership(id: UUID) async throws {
+        try await TempoSupabase.client
+            .from("partnerships")
+            .delete()
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
     /// Accept an invite by either user-typed `code` or deep-link `token`.
     /// The RPC enforces canonical ordering and idempotency on `partnerships`.
     static func acceptPairInvite(code: String? = nil, token: String? = nil) async throws -> PartnershipRow {

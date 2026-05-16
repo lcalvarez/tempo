@@ -1076,6 +1076,11 @@ final class SessionStore: ObservableObject {
     /// label up to the server using the `set_relationship_label` RPC.
     var pushRelationshipLabel: ((_ label: RelationshipLabel, _ custom: String?) async -> Void)?
 
+    /// Hook installed by `RemoteSync.attach`. Deletes the partnership
+    /// row on the server, then applies the unpaired state locally.
+    /// Returns `nil` on success, an error string otherwise.
+    var requestUnpair: (() async -> String?)?
+
     /// Generate (or rotate) the user's pending pair invite. Always goes
     /// through the server now — the previous local-random fallback was
     /// removed because partner pairing is meaningless without a backend.
@@ -1222,6 +1227,21 @@ final class SessionStore: ObservableObject {
         pendingInviteToken = nil
     }
 
+    /// User-initiated unpair. Routes through `RemoteSync.unpair` to
+    /// delete the server row and clean up realtime, then mirrors the
+    /// "now solo" state locally. Returns `nil` on success or an error
+    /// string the UI can show.
+    @discardableResult
+    func unpair() async -> String? {
+        guard let request = requestUnpair else {
+            // No backend wired (previews) — flip locally so the UI
+            // still demos correctly. Real builds always have the hook.
+            applyUnpaired()
+            return nil
+        }
+        return await request()
+    }
+
     /// Accept a pairing invite — by typed code OR deep-link token. Calls
     /// `accept_pair_invite` server-side; on success `RemoteSync` refreshes
     /// partner state which flips `isPaired = true`.
@@ -1281,10 +1301,6 @@ final class SessionStore: ObservableObject {
 
     /// What I call the other person. Resolves to "partner" when nothing's set.
     var partnerNoun: String { partner.noun }
-
-    func recordCompletedExercise(_ ex: CompletedExercise) {
-        // No-op — accumulated in the active-session view model and saved on finish.
-    }
 
     /// Hook installed by `RemoteSync.attach`. Pushes a freshly completed
     /// session up to Supabase. Best-effort: the local history list still
@@ -1379,3 +1395,63 @@ struct PartnerActivity: Equatable {
         return parts.joined(separator: " · ")
     }
 }
+
+// MARK: - Derived stats
+
+extension SessionStore {
+    /// Current consecutive-day workout streak. Counts back from today (or
+    /// yesterday if today hasn't been worked yet) using each session's
+    /// calendar day in the user's local timezone. Two sessions on the same
+    /// day count as one.
+    ///
+    /// Returns 0 when:
+    ///   - history is empty,
+    ///   - the most recent session was more than one calendar day ago
+    ///     (the streak has lapsed),
+    ///   - the user has no sessions today *and* the gap between today and
+    ///     the latest session is > 1 day.
+    var currentStreak: Int {
+        guard !history.isEmpty else { return 0 }
+        let cal = Calendar.current
+        // Project each session onto its calendar day, dedupe, sort desc.
+        let days = Set(history.map { cal.startOfDay(for: $0.date) })
+            .sorted(by: >)
+        guard let latest = days.first else { return 0 }
+        let today = cal.startOfDay(for: Date())
+        let daysSinceLatest = cal.dateComponents([.day], from: latest, to: today).day ?? .max
+        // If the latest session is from > 1 day ago, the streak has lapsed.
+        if daysSinceLatest > 1 { return 0 }
+        // Walk backwards: the streak grows as long as each preceding day
+        // is exactly one day before the previous one.
+        var streak = 1
+        var cursor = latest
+        for d in days.dropFirst() {
+            let gap = cal.dateComponents([.day], from: d, to: cursor).day ?? 0
+            if gap == 1 {
+                streak += 1
+                cursor = d
+            } else {
+                break
+            }
+        }
+        return streak
+    }
+
+    /// Most recent session that *both* partners did on the same calendar
+    /// day. Returns `nil` when we're solo, when no such overlap exists
+    /// yet, or when the partner's session title was never recorded
+    /// (legacy entries from before independent planning landed).
+    ///
+    /// Used by `TodayView`'s "Last together" card. Looks at the *user's*
+    /// own history (which carries `partnerTitle` snapshotted at save
+    /// time) so a single read is enough — no separate partner-history
+    /// fetch required.
+    var lastTogetherSession: CompletedSession? {
+        guard partnerUserId != nil else { return nil }
+        return history
+            .filter { !$0.partnerTitle.isEmpty }
+            .sorted { $0.date > $1.date }
+            .first
+    }
+}
+

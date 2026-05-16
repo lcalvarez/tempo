@@ -60,6 +60,25 @@ final class RemoteSync: ObservableObject {
     private var liveStreamTask: Task<Void, Never>?
     private var liveSubscriptionUserId: UUID?
 
+    // MARK: - Partnership-watch (realtime) state
+    //
+    // Separate channel from `live_sessions` because `partnerships`
+    // changes on a different cadence and we want them gated by RLS,
+    // not by a per-partner-id filter (the row's primary key is
+    // `id`, not the user's id, so a static filter wouldn't match).
+    // RLS already restricts the rows each subscriber sees, so we let
+    // the database do the filtering and just react to whatever lands.
+
+    /// Realtime channel + reader task for `public.partnerships`. Bound
+    /// in `rebindPartnershipWatch` once we know the user is signed in;
+    /// torn down on sign-out.
+    private var partnershipChannel: RealtimeChannelV2?
+    private var partnershipStreamTask: Task<Void, Never>?
+    /// `auth.uid()` the channel is bound to. Used to detect re-binds
+    /// (sign-out → sign-in as somebody else) so we don't keep an old
+    /// user's subscription open.
+    private var partnershipSubscriptionUserId: UUID?
+
     /// `true` while `refreshAll()` is overwriting `session.profile` from
     /// the server, so the caller can suspend `markProfileDirty()` calls
     /// that would otherwise echo the same row back.
@@ -99,6 +118,9 @@ final class RemoteSync: ObservableObject {
         session.pushRelationshipLabel = { [weak self] label, custom in
             guard let self, let pid = session.partnershipId else { return }
             await self.pushRelationshipLabel(partnershipId: pid, label: label, custom: custom)
+        }
+        session.requestUnpair = { [weak self] in
+            await self?.unpair()
         }
         session.pushCompletedSession = { [weak self] completed in
             await self?.pushCompletedSession(completed)
@@ -183,6 +205,10 @@ final class RemoteSync: ObservableObject {
         await refreshProfile(userId: userId)
         await refreshPartner(userId: userId)
         await refreshHistory(userId: userId)
+        // Subscribe to partnership-watch as soon as we're sure the
+        // session is valid. Idempotent: re-running `refreshAll` (e.g.
+        // after a sign-out → sign-in) re-binds against the new uid.
+        await rebindPartnershipWatch(to: userId)
     }
 
     private func refreshHistory(userId: UUID) async {
@@ -287,6 +313,60 @@ final class RemoteSync: ObservableObject {
         _ = try await SyncStore.acceptPairInvite(code: code, token: token)
         log("✓ accepted pair invite — refreshing partner state")
         await refreshPartner(userId: userId)
+    }
+
+    /// Tear down the current user's partnership end-to-end:
+    ///
+    ///   1. Stop publishing our own `live_sessions` row (the partner
+    ///      shouldn't see "still training" after we cut the link).
+    ///   2. DELETE the `partnerships` row via `SyncStore`. Either user
+    ///      can do this — RLS allows both `user_a` and `user_b`.
+    ///   3. Apply the unpaired state locally so the UI flips
+    ///      synchronously (don't wait for the next `refreshPartner`).
+    ///      Setting `partnerUserId = nil` triggers
+    ///      `onPartnerLinkChanged`, which tears down the realtime
+    ///      live-session subscription via
+    ///      `rebindPartnerSubscription(to: nil)`.
+    ///
+    /// The *other* side picks up the change instantly via the
+    /// `partnership-watch` realtime channel (see
+    /// `rebindPartnershipWatch`). The DELETE event lands on their
+    /// device, `handlePartnershipDelete` sees the deleted row id matches
+    /// their cached `partnershipId`, and `applyUnpaired()` runs — same
+    /// path the local side runs synchronously. No relaunch required on
+    /// either device.
+    @discardableResult
+    func unpair() async -> String? {
+        guard let session, let partnershipId = session.partnershipId else {
+            return "Not paired."
+        }
+        if auth.currentUserId == nil {
+            await auth.ensureSignedIn()
+        }
+        guard auth.currentUserId != nil else {
+            return "Not signed in."
+        }
+        // Best-effort: clear our live row first so the partner stops
+        // seeing us "training" the moment we hit confirm. If this
+        // fails we still proceed with the delete — better to be
+        // unpaired-with-stale-live-row than paired-but-silent.
+        await clearLive()
+        do {
+            try await SyncStore.deletePartnership(id: partnershipId)
+            log("✓ deleted partnership \(partnershipId)")
+        } catch {
+            log("✗ deletePartnership failed: \(error)")
+            lastError = "Couldn't unpair: \(error.localizedDescription)"
+            return error.localizedDescription
+        }
+        // Local apply *after* the server delete succeeded. This flips
+        // `isPaired` and clears the partner banner; the
+        // `onPartnerLinkChanged` hook closes the realtime channel.
+        isApplyingRemote = true
+        session.applyUnpaired()
+        isApplyingRemote = false
+        lastError = nil
+        return nil
     }
 
     /// Push a new relationship label to the server. Called from `RootView`
@@ -547,6 +627,116 @@ final class RemoteSync: ObservableObject {
         if let ch = liveChannel { await ch.unsubscribe() }
         liveChannel = nil
         liveSubscriptionUserId = nil
+    }
+
+    // MARK: - Partnership-watch (realtime)
+
+    /// (Re)bind the realtime subscription that watches the user's own
+    /// partnership row(s). Called from `refreshAll` once `auth.uid()` is
+    /// known; the channel relies on RLS to scope what we receive (each
+    /// user only sees rows where they're `user_a` or `user_b`). Passing
+    /// `nil` tears the channel down — used on sign-out.
+    ///
+    /// We use a single un-filtered channel rather than a `user_a=eq.<me>`
+    /// filter because the realtime API only supports one filter per
+    /// channel, and a partnership row could put us in either column.
+    /// Letting RLS do the work is both simpler and more secure.
+    func rebindPartnershipWatch(to userId: UUID?) async {
+        if partnershipSubscriptionUserId == userId { return }
+        await tearDownPartnershipSubscription()
+        guard let userId else { return }
+        partnershipSubscriptionUserId = userId
+
+        let channel = TempoSupabase.client.realtimeV2.channel("partnerships:\(userId.uuidString)")
+        let stream = channel.postgresChange(
+            AnyAction.self,
+            schema: "public",
+            table: "partnerships"
+        )
+        do {
+            try await channel.subscribeWithError()
+            log("✓ partnership-watch subscribe(\(userId))")
+        } catch {
+            log("✗ partnership-watch subscribe(\(userId)) failed: \(error)")
+            partnershipSubscriptionUserId = nil
+            return
+        }
+        partnershipChannel = channel
+
+        partnershipStreamTask = Task { [weak self] in
+            for await action in stream {
+                await self?.handlePartnershipAction(action, ownerUserId: userId)
+            }
+        }
+    }
+
+    /// React to inserts/updates/deletes on the `partnerships` table that
+    /// landed on our channel (RLS-pre-filtered). The events we care
+    /// about most:
+    ///
+    ///   • **DELETE** of our current partnership → flip to solo state
+    ///     immediately. This is the cross-device unpair signal.
+    ///   • **INSERT** referencing us → schedule a partner refresh so the
+    ///     UI fills in the freshly-paired partner without a relaunch.
+    ///     Useful when the *other* side accepts our invite.
+    ///   • **UPDATE** (e.g. relationship label change) → refresh partner.
+    ///
+    /// We tolerate "DELETE without payload" gracefully: when REPLICA
+    /// IDENTITY isn't FULL the old record only carries the primary key,
+    /// so we match on `id` against the locally cached `partnershipId`.
+    private func handlePartnershipAction(_ action: AnyAction, ownerUserId: UUID) async {
+        switch action {
+        case .delete(let a):
+            handlePartnershipDelete(record: a.oldRecord, ownerUserId: ownerUserId)
+        case .insert(let a):
+            handlePartnershipInsertOrUpdate(record: a.record, ownerUserId: ownerUserId, kind: "insert")
+        case .update(let a):
+            handlePartnershipInsertOrUpdate(record: a.record, ownerUserId: ownerUserId, kind: "update")
+        }
+    }
+
+    private func handlePartnershipDelete(record: [String: AnyJSON], ownerUserId: UUID) {
+        // Pull the deleted row's id. With REPLICA IDENTITY FULL we also
+        // get user_a / user_b, but `id` alone is enough: if it matches
+        // the partnership we know about locally, it was ours.
+        let deletedId: UUID? = (record["id"]?.stringValue).flatMap(UUID.init(uuidString:))
+        guard let deletedId else {
+            log("· partnership-watch delete: no id in payload, ignoring")
+            return
+        }
+        let mine = session?.partnershipId
+        guard deletedId == mine else {
+            // Not our partnership row (shouldn't happen post-RLS but
+            // belt-and-suspenders).
+            log("· partnership-watch delete: \(deletedId) isn't ours (\(mine?.uuidString ?? "nil"))")
+            return
+        }
+        log("· partnership-watch delete: \(deletedId) — flipping to solo")
+        // Tearing down our own live row would be polite to a partner who
+        // unpaired us — they shouldn't see ghost activity afterwards.
+        Task { await self.clearLive() }
+        isApplyingRemote = true
+        session?.applyUnpaired()
+        isApplyingRemote = false
+        session?.showToast("Unpaired", icon: "link.badge.plus")
+    }
+
+    private func handlePartnershipInsertOrUpdate(record: [String: AnyJSON], ownerUserId: UUID, kind: String) {
+        // Only refresh if the row references us. Realtime + RLS should
+        // already guarantee that, but be defensive.
+        let userA = (record["user_a"]?.stringValue).flatMap(UUID.init(uuidString:))
+        let userB = (record["user_b"]?.stringValue).flatMap(UUID.init(uuidString:))
+        guard userA == ownerUserId || userB == ownerUserId else { return }
+        log("· partnership-watch \(kind): refreshing partner")
+        Task { await self.refreshPartner(userId: ownerUserId) }
+    }
+
+    private func tearDownPartnershipSubscription() async {
+        partnershipStreamTask?.cancel()
+        partnershipStreamTask = nil
+        if let ch = partnershipChannel { await ch.unsubscribe() }
+        partnershipChannel = nil
+        partnershipSubscriptionUserId = nil
     }
 
     /// Realtime payloads arrive as `[String: AnyJSON]`. We re-encode
