@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tempo — screens</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  html, body { margin: 0; padding: 0; background: oklch(0.10 0.005 260); }
+  body {
+    font-family: 'Geist', -apple-system, system-ui, sans-serif;
+    color: oklch(0.97 0.003 260);
+    min-height: 100vh;
+  }
+
+  /* Canvas background overrides — make this feel like a design surface, not a webpage */
+  .dc-bg {
+    background:
+      radial-gradient(1200px 600px at 30% -10%, oklch(0.16 0.008 260) 0%, transparent 60%),
+      oklch(0.10 0.005 260);
+    min-height: 100vh;
+  }
+
+  /* Intro brief — junior-designer note to manager */
+  .brief {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 48px 32px 24px;
+    color: oklch(0.74 0.008 260);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .brief h1 {
+    color: oklch(0.97 0.003 260);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+    margin: 0 0 8px;
+  }
+  .brief .subtitle {
+    font-family: 'Geist Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: oklch(0.55 0.010 260);
+    margin-bottom: 28px;
+  }
+  .brief h2 {
+    color: oklch(0.97 0.003 260);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'Geist Mono', ui-monospace, monospace;
+    margin: 24px 0 8px;
+  }
+  .brief ul { margin: 0; padding-left: 18px; }
+  .brief li { margin-bottom: 4px; }
+  .brief .swatchrow { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .brief .swatch {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: oklch(0.20 0.008 260);
+    border: 1px solid oklch(1 0 0 / 0.06);
+    font-family: 'Geist Mono', ui-monospace, monospace;
+    font-size: 11px;
+    color: oklch(0.74 0.008 260);
+  }
+  .brief .swatch .chip {
+    width: 14px; height: 14px; border-radius: 4px;
+  }
+</style>
+</head>
+<body class="dc-bg">
+
+<!-- Designer brief — keeps reasoning visible -->
+<div class="brief">
+  <h1>Tempo — screen explorations</h1>
+  <div class="subtitle">couples fitness · v1 · dark-mode-first · establishes the system the rest of the app inherits</div>
+
+  <p>Two sections so far: <b>Today</b> (the front door, three landing states) and <b>Active Session</b> (the heart of the app — logging, partner presence, rest). Drag artboards to reorder, click any to focus fullscreen, use the toolbar zoom to compare.</p>
+
+  <h2>Visual system</h2>
+  <ul>
+    <li><b>Type</b> — Geist (UI) + Geist Mono (data &amp; labels). Tabular numerals throughout so weights/reps/times always align in columns.</li>
+    <li><b>Surface</b> — dark, slightly cool. No gradients-for-decoration. Card elevation by 4% lightness steps, hairlines for separation.</li>
+    <li><b>Accent</b> — a single fresh green, reserved for primary action (Start, Log, Complete, Join, Finish). Never used decoratively.</li>
+    <li><b>Partner presence</b> — muted blue for "You" and muted amber for "Andrea". Smaller, lower-contrast than the accent so they read as ambient context, not competition.</li>
+    <li><b>Numbers are the hero</b> — in Active Session, reps × weight hit 96px. Labels small &amp; mono.</li>
+    <li><b>One primary action per screen</b> — Today = Start, Active = Log Set / Finish, anchored visually at the bottom.</li>
+  </ul>
+
+  <div class="swatchrow">
+    <div class="swatch"><span class="chip" style="background:oklch(0.84 0.19 142)"></span>accent · primary action</div>
+    <div class="swatch"><span class="chip" style="background:oklch(0.78 0.09 230)"></span>you · muted blue</div>
+    <div class="swatch"><span class="chip" style="background:oklch(0.82 0.09 78)"></span>partner · muted amber</div>
+    <div class="swatch"><span class="chip" style="background:oklch(0.86 0.16 95)"></span>PR · warm gold (rare)</div>
+  </div>
+
+  <h2>Tweak it</h2>
+  <p style="margin:0">Toggle <i>Tweaks</i> in the toolbar to try alternate accent colors and partner palettes — this is the moment to lock the system before the rest of the app inherits it.</p>
+</div>
+
+<div id="root"></div>
+
+<!-- React + Babel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="today.jsx"></script>
+<script type="text/babel" src="active.jsx"></script>
+<script type="text/babel" src="onboarding.jsx"></script>
+<script type="text/babel" src="profile.jsx"></script>
+<script type="text/babel" src="goals.jsx"></script>
+<script type="text/babel" src="post.jsx"></script>
+<script type="text/babel" src="history.jsx"></script>
+<script type="text/babel" src="progress.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+  // Accent stored as the raw "L C H" triple so we can derive --accent and --accent-dim.
+  const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "accent": "0.84 0.19 142",
+    "partner": "blue-amber"
+  }/*EDITMODE-END*/;
+
+  const ACCENT_OPTIONS = [
+    '0.84 0.19 142',  // green
+    '0.90 0.20 122',  // lime
+    '0.78 0.20 250',  // electric blue
+    '0.75 0.18 30',   // coral
+    '0.72 0.22 0'     // magenta
+  ];
+
+  const PARTNERS = {
+    'blue-amber':   { you: '0.78 0.09 230', partner: '0.82 0.09 78' },
+    'teal-rose':    { you: '0.78 0.08 195', partner: '0.78 0.10 12' },
+    'indigo-peach': { you: '0.72 0.08 270', partner: '0.82 0.08 55' },
+    'mono':         { you: '0.72 0.012 260', partner: '0.50 0.012 260' }
+  };
+
+  function applyTokens(t) {
+    const r = document.documentElement;
+    const acc = t.accent;
+    r.style.setProperty('--accent', `oklch(${acc})`);
+    r.style.setProperty('--accent-dim', `oklch(${acc} / 0.14)`);
+    document.querySelectorAll('.cta-primary').forEach(b => {
+      b.style.boxShadow = `0 1px 0 oklch(1 0 0 / 0.25) inset, 0 -1px 0 oklch(0 0 0 / 0.15) inset, 0 8px 20px oklch(${acc} / 0.25)`;
+    });
+    const p = PARTNERS[t.partner] || PARTNERS['blue-amber'];
+    r.style.setProperty('--you', `oklch(${p.you})`);
+    r.style.setProperty('--you-dim', `oklch(${p.you} / 0.16)`);
+    r.style.setProperty('--partner', `oklch(${p.partner})`);
+    r.style.setProperty('--partner-dim', `oklch(${p.partner} / 0.16)`);
+  }
+
+  function App() {
+    const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+    React.useEffect(() => { applyTokens(tweaks); }, [tweaks]);
+    // re-apply after any tweak change to update inline shadows on CTAs
+    React.useEffect(() => {
+      const t = setTimeout(() => applyTokens(tweaks), 30);
+      return () => clearTimeout(t);
+    });
+
+    const frame = (Comp) => (
+      <IOSDevice width={390} height={844} dark={true}>
+        <Comp />
+      </IOSDevice>
+    );
+
+    return (
+      <>
+        <DesignCanvas>
+          <DCSection id="today" title="Today screen" subtitle="Three states — front door of the app">
+            <DCArtboard id="ready" label="A · Session ready" width={390} height={844}>
+              {frame(TodaySessionReady)}
+            </DCArtboard>
+            <DCArtboard id="live" label="B · Session in progress" width={390} height={844}>
+              {frame(TodaySessionInProgress)}
+            </DCArtboard>
+            <DCArtboard id="rest" label="C · Rest day" width={390} height={844}>
+              {frame(TodayRestDay)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="active" title="Active session" subtitle="The heart of the app — logging, partner presence, rest">
+            <DCArtboard id="strength-rest" label="A · Strength · between sets" width={390} height={844}>
+              {frame(ActiveStrengthBetweenSets)}
+            </DCArtboard>
+            <DCArtboard id="cardio" label="B · Cardio · live distance" width={390} height={844}>
+              {frame(ActiveCardio)}
+            </DCArtboard>
+            <DCArtboard id="plan-sheet" label="C · Plan sheet (swipe-up)" width={390} height={844}>
+              {frame(PlanSheetOverlay)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="onboarding" title="Onboarding + pairing" subtitle="First-run flow — sign up, profile, partner connection">
+            <DCArtboard id="ob-welcome" label="1 · Welcome" width={390} height={844}>
+              {frame(OBWelcome)}
+            </DCArtboard>
+            <DCArtboard id="ob-signin" label="2 · Sign in" width={390} height={844}>
+              {frame(OBSignIn)}
+            </DCArtboard>
+            <DCArtboard id="ob-selfie" label="3 · Photo (optional)" width={390} height={844}>
+              {frame(OBSelfie)}
+            </DCArtboard>
+            <DCArtboard id="ob-profile" label="4 · About you" width={390} height={844}>
+              {frame(OBProfile)}
+            </DCArtboard>
+            <DCArtboard id="ob-pair" label="5 · Pair up" width={390} height={844}>
+              {frame(OBPairChoice)}
+            </DCArtboard>
+            <DCArtboard id="ob-pending" label="6 · Pending invite" width={390} height={844}>
+              {frame(OBPending)}
+            </DCArtboard>
+            <DCArtboard id="ob-ready" label="7 · We're ready" width={390} height={844}>
+              {frame(OBReady)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="profile" title="Profile + settings" subtitle="Settings landing — includes the unpair flow">
+            <DCArtboard id="profile-main" label="A · Profile (main)" width={390} height={844}>
+              {frame(ProfileMain)}
+            </DCArtboard>
+            <DCArtboard id="profile-unpair" label="B · Unpair confirmation" width={390} height={844}>
+              {frame(ProfileUnpairConfirm)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="goals" title="Goals questionnaire" subtitle="Post-onboarding flow — editing re-triggers AI planning">
+            <DCArtboard id="goals-focus" label="1 · Primary focus" width={390} height={844}>
+              {frame(GoalsFocus)}
+            </DCArtboard>
+            <DCArtboard id="goals-frequency" label="2 · Frequency" width={390} height={844}>
+              {frame(GoalsFrequency)}
+            </DCArtboard>
+            <DCArtboard id="goals-intensity" label="3 · Intensity" width={390} height={844}>
+              {frame(GoalsIntensity)}
+            </DCArtboard>
+            <DCArtboard id="goals-styles" label="4 · Styles" width={390} height={844}>
+              {frame(GoalsStyles)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="post" title="Post-session" subtitle="Comparison after both complete — PRs, totals, reactions">
+            <DCArtboard id="post-compare" label="A · Side-by-side comparison" width={390} height={844}>
+              {frame(PostSessionCompare)}
+            </DCArtboard>
+            <DCArtboard id="post-pr" label="B · PR moment (mid-session)" width={390} height={844}>
+              {frame(PRMoment)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="history" title="History" subtitle="Reverse-chronological session log — filterable">
+            <DCArtboard id="history-list" label="History list" width={390} height={844}>
+              {frame(HistoryList)}
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="progress" title="Progress" subtitle="Power-user tab — trends, PRs, body-part coverage">
+            <DCArtboard id="progress-overview" label="A · Overview" width={390} height={844}>
+              {frame(ProgressOverview)}
+            </DCArtboard>
+            <DCArtboard id="progress-detail" label="B · Per-exercise detail" width={390} height={844}>
+              {frame(ProgressExerciseDetail)}
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+
+        <TweaksPanel title="Tweaks">
+          <TweakSection label="Accent">
+            <TweakColor
+              label="Primary action"
+              value={`oklch(${tweaks.accent})`}
+              onChange={v => {
+                const m = String(v).match(/oklch\(([^)]+)\)/);
+                setTweak('accent', m ? m[1] : v);
+              }}
+              options={ACCENT_OPTIONS.map(t => `oklch(${t})`)}
+            />
+          </TweakSection>
+
+          <TweakSection label="Partner palette">
+            <TweakRadio
+              label="Tones for You / Andrea"
+              value={tweaks.partner}
+              onChange={v => setTweak('partner', v)}
+              options={['blue-amber','teal-rose','indigo-peach','mono']}
+            />
+          </TweakSection>
+        </TweaksPanel>
+      </>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

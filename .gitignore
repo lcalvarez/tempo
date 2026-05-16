@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.hmap
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+
+# Supabase (CLI)
+supabase/.temp/
+supabase/.branches/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+ios/Tempo/Supabase/SupabaseConfig.swift
+
+# Tempo build artifacts
+Tempo.zip

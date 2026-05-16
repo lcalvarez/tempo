@@ -1,0 +1,536 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000001 /* TempoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* TempoApp.swift */; };
+		A1000002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* RootView.swift */; };
+		A1000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Theme.swift */; };
+		A1000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004 /* Models.swift */; };
+		A1000005 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005 /* Buttons.swift */; };
+		A1000006 /* Avatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000006 /* Avatar.swift */; };
+		A1000007 /* Progress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007 /* Progress.swift */; };
+		A1000008 /* Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000008 /* Chrome.swift */; };
+		A1000009 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000009 /* TodayView.swift */; };
+		A100000A /* ActiveSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000A /* ActiveSessionView.swift */; };
+		A100000B /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000B /* HistoryView.swift */; };
+		A100000C /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000C /* ProgressView.swift */; };
+		A100000D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000D /* ProfileView.swift */; };
+		A100000E /* PostSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000E /* PostSessionView.swift */; };
+		A100000F /* PRMomentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000F /* PRMomentView.swift */; };
+		A1000010 /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* OnboardingFlow.swift */; };
+		A1000011 /* GoalsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* GoalsFlow.swift */; };
+		A1000012 /* ScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* ScheduleView.swift */; };
+		A1000020 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000020 /* Assets.xcassets */; };
+		A1000021 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000021 /* Preview Assets.xcassets */; };
+		A2000001 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = P0000001 /* Supabase */; };
+		A2000010 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000010 /* SupabaseClient.swift */; };
+		A2000011 /* AuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000011 /* AuthStore.swift */; };
+		A2000012 /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000012 /* SyncStore.swift */; };
+		A2000013 /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000013 /* SupabaseConfig.swift */; };
+		A2000014 /* SupabaseDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000014 /* SupabaseDTOs.swift */; };
+		A2000015 /* RemoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000015 /* RemoteSync.swift */; };
+		A2000020 /* InvitePartnerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000020 /* InvitePartnerScreen.swift */; };
+		A2000030 /* SignInScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000030 /* SignInScreen.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B0000001 /* Tempo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tempo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000001 /* TempoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempoApp.swift; sourceTree = "<group>"; };
+		B1000002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B1000003 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		B1000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B1000005 /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
+		B1000006 /* Avatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Avatar.swift; sourceTree = "<group>"; };
+		B1000007 /* Progress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Progress.swift; sourceTree = "<group>"; };
+		B1000008 /* Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome.swift; sourceTree = "<group>"; };
+		B1000009 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		B100000A /* ActiveSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionView.swift; sourceTree = "<group>"; };
+		B100000B /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		B100000C /* ProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressView.swift; sourceTree = "<group>"; };
+		B100000D /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		B100000E /* PostSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostSessionView.swift; sourceTree = "<group>"; };
+		B100000F /* PRMomentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PRMomentView.swift; sourceTree = "<group>"; };
+		B1000010 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
+		B1000011 /* GoalsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsFlow.swift; sourceTree = "<group>"; };
+		B1000012 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
+		B1000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B1000021 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		B1000030 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B2000010 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
+		B2000011 /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
+		B2000012 /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
+		B2000013 /* SupabaseConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfig.swift; sourceTree = "<group>"; };
+		B2000014 /* SupabaseDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseDTOs.swift; sourceTree = "<group>"; };
+		B2000015 /* RemoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSync.swift; sourceTree = "<group>"; };
+		B2000020 /* InvitePartnerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvitePartnerScreen.swift; sourceTree = "<group>"; };
+		B2000030 /* SignInScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInScreen.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C0000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A2000001 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D0000001 = {
+			isa = PBXGroup;
+			children = (
+				D0000002 /* Tempo */,
+				D0000099 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D0000099 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B0000001 /* Tempo.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D0000002 /* Tempo */ = {
+			isa = PBXGroup;
+			children = (
+				B1000001 /* TempoApp.swift */,
+				B1000002 /* RootView.swift */,
+				D0000003 /* Theme */,
+				D0000004 /* Models */,
+				D0000005 /* Components */,
+				D0000006 /* Features */,
+				D0000020 /* Supabase */,
+				B1000020 /* Assets.xcassets */,
+				D0000007 /* Preview Content */,
+				B1000030 /* Info.plist */,
+			);
+			path = Tempo;
+			sourceTree = "<group>";
+		};
+		D0000020 /* Supabase */ = {
+			isa = PBXGroup;
+			children = (
+				B2000010 /* SupabaseClient.swift */,
+				B2000013 /* SupabaseConfig.swift */,
+				B2000014 /* SupabaseDTOs.swift */,
+				B2000011 /* AuthStore.swift */,
+				B2000012 /* SyncStore.swift */,
+				B2000015 /* RemoteSync.swift */,
+			);
+			path = Supabase;
+			sourceTree = "<group>";
+		};
+		D0000003 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				B1000003 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		D0000004 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B1000004 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		D0000005 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B1000005 /* Buttons.swift */,
+				B1000006 /* Avatar.swift */,
+				B1000007 /* Progress.swift */,
+				B1000008 /* Chrome.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		D0000006 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				D0000010 /* Today */,
+				D0000011 /* ActiveSession */,
+				D0000012 /* History */,
+				D0000013 /* Progress */,
+				D0000014 /* Profile */,
+				D0000015 /* PostSession */,
+				D0000016 /* Onboarding */,
+				D0000017 /* Goals */,
+				D0000018 /* Pairing */,
+				D0000019 /* Schedule */,
+				D0000030 /* Auth */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		D0000019 /* Schedule */ = {
+			isa = PBXGroup;
+			children = (
+				B1000012 /* ScheduleView.swift */,
+			);
+			path = Schedule;
+			sourceTree = "<group>";
+		};
+		D0000018 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				B2000020 /* InvitePartnerScreen.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		D0000030 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B2000030 /* SignInScreen.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		D0000017 /* Goals */ = {
+			isa = PBXGroup;
+			children = (
+				B1000011 /* GoalsFlow.swift */,
+			);
+			path = Goals;
+			sourceTree = "<group>";
+		};
+		D0000007 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				B1000021 /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		D0000010 /* Today */ = {
+			isa = PBXGroup;
+			children = (
+				B1000009 /* TodayView.swift */,
+			);
+			path = Today;
+			sourceTree = "<group>";
+		};
+		D0000011 /* ActiveSession */ = {
+			isa = PBXGroup;
+			children = (
+				B100000A /* ActiveSessionView.swift */,
+			);
+			path = ActiveSession;
+			sourceTree = "<group>";
+		};
+		D0000012 /* History */ = {
+			isa = PBXGroup;
+			children = (
+				B100000B /* HistoryView.swift */,
+			);
+			path = History;
+			sourceTree = "<group>";
+		};
+		D0000013 /* Progress */ = {
+			isa = PBXGroup;
+			children = (
+				B100000C /* ProgressView.swift */,
+			);
+			path = Progress;
+			sourceTree = "<group>";
+		};
+		D0000014 /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				B100000D /* ProfileView.swift */,
+			);
+			path = Profile;
+			sourceTree = "<group>";
+		};
+		D0000015 /* PostSession */ = {
+			isa = PBXGroup;
+			children = (
+				B100000E /* PostSessionView.swift */,
+				B100000F /* PRMomentView.swift */,
+			);
+			path = PostSession;
+			sourceTree = "<group>";
+		};
+		D0000016 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				B1000010 /* OnboardingFlow.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E0000001 /* Tempo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0000003 /* Build configuration list for PBXNativeTarget "Tempo" */;
+			buildPhases = (
+				F1000001 /* Sources */,
+				C0000001 /* Frameworks */,
+				F1000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Tempo;
+			packageProductDependencies = (
+				P0000001 /* Supabase */,
+			);
+			productName = Tempo;
+			productReference = B0000001 /* Tempo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F0000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					E0000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = F0000002 /* Build configuration list for PBXProject "Tempo" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D0000001;
+			packageReferences = (
+				Q0000001 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			productRefGroup = D0000099 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E0000001 /* Tempo */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F1000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000021 /* Preview Assets.xcassets in Resources */,
+				A1000020 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F1000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001 /* TempoApp.swift in Sources */,
+				A1000002 /* RootView.swift in Sources */,
+				A1000003 /* Theme.swift in Sources */,
+				A1000004 /* Models.swift in Sources */,
+				A1000005 /* Buttons.swift in Sources */,
+				A1000006 /* Avatar.swift in Sources */,
+				A1000007 /* Progress.swift in Sources */,
+				A1000008 /* Chrome.swift in Sources */,
+				A1000009 /* TodayView.swift in Sources */,
+				A100000A /* ActiveSessionView.swift in Sources */,
+				A100000B /* HistoryView.swift in Sources */,
+				A100000C /* ProgressView.swift in Sources */,
+				A100000D /* ProfileView.swift in Sources */,
+				A100000E /* PostSessionView.swift in Sources */,
+				A100000F /* PRMomentView.swift in Sources */,
+				A1000010 /* OnboardingFlow.swift in Sources */,
+				A1000011 /* GoalsFlow.swift in Sources */,
+				A1000012 /* ScheduleView.swift in Sources */,
+				A2000010 /* SupabaseClient.swift in Sources */,
+				A2000013 /* SupabaseConfig.swift in Sources */,
+				A2000014 /* SupabaseDTOs.swift in Sources */,
+				A2000011 /* AuthStore.swift in Sources */,
+				A2000012 /* SyncStore.swift in Sources */,
+				A2000015 /* RemoteSync.swift in Sources */,
+				A2000020 /* InvitePartnerScreen.swift in Sources */,
+				A2000030 /* SignInScreen.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		G0000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		G0000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		G0000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Tempo/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tempo/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tempo.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		G0000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Tempo/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tempo/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tempo.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F0000002 /* Build configuration list for PBXProject "Tempo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G0000001 /* Debug */,
+				G0000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0000003 /* Build configuration list for PBXNativeTarget "Tempo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G0000003 /* Debug */,
+				G0000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		Q0000001 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.46.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P0000001 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = Q0000001 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F0000001 /* Project object */;
+}

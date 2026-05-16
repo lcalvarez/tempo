@@ -1,0 +1,64 @@
+# .github/workflows/supabase-smoke.yml
+#
+# Runs on every push and PR. Spins up the local Supabase stack from the
+# committed migrations + config, then runs scripts/smoke-supabase.sh to
+# verify auth, the new-user trigger, RLS, and the REST round-trip the iOS
+# app depends on. Catches schema bugs before they reach the cloud project.
+#
+# This workflow does NOT build the iOS app — that requires a macOS runner
+# with Xcode and is much slower/more expensive. See `ios-build.yml`.
+name: supabase smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - "scripts/smoke-supabase.sh"
+      - ".github/workflows/supabase-smoke.yml"
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "scripts/smoke-supabase.sh"
+      - ".github/workflows/supabase-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_AUTH_EXTERNAL_APPLE_SECRET: ci_dummy_unused_for_local
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start --workdir .
+
+      - name: Wait for REST to settle
+        run: |
+          ANON=$(supabase status -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)["ANON_KEY"])')
+          for _ in $(seq 1 30); do
+            if curl -sf -H "apikey: $ANON" http://127.0.0.1:54321/rest/v1/ > /dev/null; then
+              echo "REST is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "REST did not come up in time"
+          exit 1
+
+      - name: Run smoke test
+        run: |
+          ANON=$(supabase status -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)["ANON_KEY"])')
+          SUPA_URL=http://127.0.0.1:54321 SUPA_ANON="$ANON" \
+            scripts/smoke-supabase.sh
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup || true
