@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Interactive onboarding flow (7 screens). Reads/writes the live SessionStore
 /// so every input persists through to the rest of the app.
@@ -49,6 +50,8 @@ struct OnboardingFlow: View {
         case 4: PairChoiceScreen(onSendInvite: {
                     store.generatePendingCode()
                     advance()
+                }, onPaired: {
+                    step = 6   // partner accepted my code, jump to Ready
                 }, onPairLater: {
                     step = 6   // skip to ready
                 })
@@ -139,7 +142,7 @@ private struct SignInScreen: View {
         // shipping a button that does nothing is worse than not shipping
         // it. We'll add it back in v1.1.
         OBScaffold(stepLabel: "Step 1 of 5", title: "Sign in to\nget started",
-                   subtitle: "An account keeps your data across reinstalls and on a second device. You can also start as a guest and save later.") {
+                   subtitle: "Or continue as a guest — you can save later.") {
             Spacer(minLength: 36)
 
             PrimaryCTA(title: "Continue with email") {
@@ -189,30 +192,54 @@ private struct PhotoScreen: View {
         ("you", .you), ("partner", .partner), ("accent", .accent), ("neutral", .neutral)
     ]
 
+    /// Selection from `PhotosPicker`. We watch this with `.onChange` and
+    /// load the selected image into a compressed JPEG that we stash on
+    /// `profile.avatarData`. The picker resets to `nil` after each load
+    /// so the user can pick a different photo without our state caring
+    /// what the old item was.
+    @State private var pickerItem: PhotosPickerItem? = nil
+    @State private var loading = false
+
     var body: some View {
         OBScaffold(
             stepLabel: "Step 2 of 5 · Photo",
             title: "Pick a photo\n(or skip).",
-            subtitle: "So Andrea can see who she's pairing with. You can change it anytime."
+            subtitle: "So your partner can recognize you when you pair. You can change it anytime."
         ) {
+            // Avatar preview. Tapping the circle is the main affordance —
+            // it opens the system photo picker. If a photo is already
+            // chosen we render it inside the circle and fall back to the
+            // dashed placeholder otherwise.
             HStack {
                 Spacer()
-                ZStack {
-                    Circle().fill(Theme.Color.bgElev1)
-                    Circle().strokeBorder(Theme.Color.border, style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera").font(.system(size: 36)).foregroundColor(Theme.Color.fgSoft)
-                        Text("Tap to add").labelStyle(color: Theme.Color.fgMute)
-                    }
+                PhotosPicker(selection: $pickerItem,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    avatarPreview
                 }
-                .frame(width: 168, height: 168)
+                .buttonStyle(.plain)
                 Spacer()
             }
             .padding(.top, 12)
 
             HStack(spacing: 10) {
-                SecondaryCTA(title: "Take selfie", leadingSystemImage: "camera", height: 48) {}
-                SecondaryCTA(title: "Choose from library", leadingSystemImage: "photo", height: 48) {}
+                // PhotosPicker again, formatted as a secondary CTA so
+                // the user has a labeled affordance even if the circle
+                // doesn't read as tappable. Camera is a separate path.
+                PhotosPicker(selection: $pickerItem,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    SecondaryCTALabel(title: "Choose from library",
+                                      leadingSystemImage: "photo",
+                                      height: 48)
+                }
+                if profile.avatarData != nil {
+                    SecondaryCTA(title: "Remove",
+                                 leadingSystemImage: "trash",
+                                 height: 48) {
+                        profile.avatarData = nil
+                    }
+                }
             }
 
             VStack(spacing: 12) {
@@ -244,6 +271,82 @@ private struct PhotoScreen: View {
                 .font(Theme.Font.sans(14))
                 .foregroundColor(Theme.Color.fgMute)
         }
+        .onChange(of: pickerItem) { _, newItem in
+            guard let newItem else { return }
+            loading = true
+            Task { @MainActor in
+                defer { loading = false; pickerItem = nil }
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let img = UIImage(data: data),
+                   let resized = img.resizedAndCompressedJPEG(maxSide: 512, quality: 0.7) {
+                    profile.avatarData = resized
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var avatarPreview: some View {
+        ZStack {
+            if let data = profile.avatarData, let img = UIImage(data: data) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 168, height: 168)
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(Theme.Color.border, lineWidth: 1.5))
+            } else {
+                Circle().fill(Theme.Color.bgElev1)
+                Circle().strokeBorder(Theme.Color.border, style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
+                VStack(spacing: 8) {
+                    Image(systemName: "camera").font(.system(size: 36)).foregroundColor(Theme.Color.fgSoft)
+                    Text(loading ? "Loading…" : "Tap to add").labelStyle(color: Theme.Color.fgMute)
+                }
+            }
+        }
+        .frame(width: 168, height: 168)
+    }
+}
+
+/// Static label that mirrors `SecondaryCTA`'s look without consuming the
+/// tap (the wrapping `PhotosPicker` handles tap). Pulled out so the
+/// outer button doesn't double-trigger.
+private struct SecondaryCTALabel: View {
+    let title: String
+    let leadingSystemImage: String
+    var height: CGFloat = 56
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: leadingSystemImage)
+                .font(.system(size: 14, weight: .semibold))
+            Text(title).font(Theme.Font.sans(15, .semibold))
+        }
+        .foregroundColor(Theme.Color.fg)
+        .frame(maxWidth: .infinity).frame(height: height)
+        .background(Theme.Color.bgElev2)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.Color.border, lineWidth: 1)
+        )
+    }
+}
+
+private extension UIImage {
+    /// Downscale + JPEG-compress so the avatar isn't a 4 MB chunk on
+    /// every Profile load. 512px on the longest edge is plenty for
+    /// retina rendering at the largest size we use (168pt).
+    func resizedAndCompressedJPEG(maxSide: CGFloat, quality: CGFloat) -> Data? {
+        let scale = min(maxSide / max(size.width, size.height), 1.0)
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+        let resized = renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: newSize))
+        }
+        return resized.jpegData(compressionQuality: quality)
     }
 }
 
@@ -358,7 +461,11 @@ private struct AboutYouScreen: View {
 
 private struct PairChoiceScreen: View {
     var onSendInvite: () -> Void
+    /// Called after the user successfully redeems a code from their partner.
+    var onPaired: () -> Void
     var onPairLater: () -> Void
+
+    @State private var showEnterCode = false
 
     var body: some View {
         OBScaffold(
@@ -376,7 +483,7 @@ private struct PairChoiceScreen: View {
                 )
             }.buttonStyle(PressableStyle())
 
-            Button(action: onSendInvite) {
+            Button(action: { showEnterCode = true }) {
                 pairCard(
                     label: "If they invited you",
                     labelColor: Theme.Color.fgMute,
@@ -390,6 +497,14 @@ private struct PairChoiceScreen: View {
             Button("Pair later — let me look around first", action: onPairLater)
                 .font(Theme.Font.sans(14))
                 .foregroundColor(Theme.Color.fgSoft)
+        }
+        .sheet(isPresented: $showEnterCode) {
+            EnterCodeSheet(onSuccess: {
+                showEnterCode = false
+                onPaired()
+            })
+            .presentationDetents([.medium])
+            .presentationBackground(Theme.Color.bgElev1)
         }
     }
 
@@ -408,6 +523,92 @@ private struct PairChoiceScreen: View {
         .background(Theme.Color.bgElev1)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.lg).strokeBorder(borderColor, lineWidth: 1))
+    }
+}
+
+// MARK: - Enter-code sheet (counterpart to "Send your partner an invite")
+//
+// Presented from `PairChoiceScreen` when the user picks "Enter their code".
+// Calls the live `accept_pair_invite` RPC via `SessionStore.acceptPartner`,
+// surfaces the server's error string inline on failure, and dismisses on
+// success so the onboarding flow can advance to ReadyScreen.
+
+private struct EnterCodeSheet: View {
+    var onSuccess: () -> Void
+
+    @EnvironmentObject var store: SessionStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var code: String = ""
+    @State private var submitting = false
+    @State private var errorText: String? = nil
+    @FocusState private var focused: Bool
+
+    /// Server expects A–Z + 0–9, 6 chars (matches `create_pair_invite`).
+    private var normalized: String {
+        code.uppercased().filter { $0.isLetter || $0.isNumber }
+    }
+    private var canSubmit: Bool { normalized.count == 6 && !submitting }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Enter their code".uppercased()).overlineStyle()
+                Text("Pair up").font(.system(size: 26, weight: .semibold)).foregroundColor(Theme.Color.fg)
+                Text("Type the 6-character code your partner sent you.")
+                    .font(Theme.Font.sans(13)).foregroundColor(Theme.Color.fgMute)
+            }
+
+            TextField("ABC123", text: $code)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 28, weight: .semibold).monospaced())
+                .multilineTextAlignment(.center)
+                .focused($focused)
+                .padding(.vertical, 14)
+                .background(Theme.Color.bgElev2)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).strokeBorder(Theme.Color.hairline, lineWidth: 1))
+                .onChange(of: code) { _, newValue in
+                    let cleaned = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(6))
+                    if cleaned != newValue { code = cleaned }
+                    errorText = nil
+                }
+
+            if let errorText {
+                Text(errorText)
+                    .font(Theme.Font.sans(13))
+                    .foregroundColor(Theme.Color.dangerSoft)
+            }
+
+            Spacer()
+
+            PrimaryCTA(
+                title: submitting ? "Connecting…" : "Connect",
+                trailingSystemImage: submitting ? nil : "arrow.right",
+                tall: true,
+                action: submit
+            )
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : 0.5)
+        }
+        .padding(24)
+        .onAppear { focused = true }
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        submitting = true
+        errorText = nil
+        Task { @MainActor in
+            let err = await store.acceptPartner(code: normalized)
+            submitting = false
+            if let err {
+                errorText = err
+            } else {
+                onSuccess()
+            }
+        }
     }
 }
 
@@ -443,7 +644,7 @@ private struct PendingCodeScreen: View {
                 Avatar(initial: "?", size: 44, tone: .neutral)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Waiting for your partner".uppercased()).overlineStyle(color: Theme.Color.fg)
-                    Text("In the real product they'd accept on their phone. Tap below to simulate.")
+                    Text("Send them the code — Tempo pairs you automatically once they enter it.")
                         .font(Theme.Font.sans(13)).foregroundColor(Theme.Color.fgMute)
                 }
                 Spacer()
@@ -504,41 +705,52 @@ private struct ReadyScreen: View {
     var profile: UserProfile
     var partner: PartnerProfile
     var onContinue: () -> Void
+    @EnvironmentObject var store: SessionStore
+
+    /// Show a "you + partner" celebration only if pairing actually completed.
+    /// Users who picked "I'll pair later" land here too — for them we want a
+    /// simpler "your profile is ready" framing, no fake partner avatar.
+    private var hasRealPartner: Bool { store.isPaired }
 
     var body: some View {
         VStack {
             Spacer()
-            HStack(spacing: -8) {
-                Avatar(initial: profile.name.first.map(String.init)?.uppercased() ?? "Y", size: 64, tone: .you)
-                Rectangle().fill(Theme.Color.accent).frame(width: 40, height: 2)
-                Avatar(initial: partner.initial, size: 64, tone: .partner)
+            if hasRealPartner {
+                HStack(spacing: -8) {
+                    Avatar(initial: profile.name.first.map(String.init)?.uppercased() ?? "Y", size: 64, tone: .you)
+                    Rectangle().fill(Theme.Color.accent).frame(width: 40, height: 2)
+                    Avatar(initial: partner.initial, size: 64, tone: .partner)
+                }
+                .padding(.bottom, 24)
+
+                Text("Paired".uppercased()).overlineStyle(color: Theme.Color.accent)
+                (Text("You and \(partner.name)\n").foregroundColor(Theme.Color.fg)
+                 + Text("are ready.").foregroundColor(Theme.Color.fgMute))
+                    .font(.system(size: 32, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .kerning(-0.8)
+                    .padding(.top, 8)
+            } else {
+                Avatar(initial: profile.name.first.map(String.init)?.uppercased() ?? "Y", size: 72, tone: .you)
+                    .padding(.bottom, 24)
+
+                Text("Profile saved".uppercased()).overlineStyle(color: Theme.Color.accent)
+                (Text("You're\n").foregroundColor(Theme.Color.fg)
+                 + Text("ready.").foregroundColor(Theme.Color.fgMute))
+                    .font(.system(size: 32, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .kerning(-0.8)
+                    .padding(.top, 8)
             }
-            .padding(.bottom, 24)
 
-            Text("Paired".uppercased()).overlineStyle(color: Theme.Color.accent)
-            (Text("You and \(partner.name)\n").foregroundColor(Theme.Color.fg)
-             + Text("are ready.").foregroundColor(Theme.Color.fgMute))
-                .font(.system(size: 32, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .kerning(-0.8)
-                .padding(.top, 8)
-
-            Text("Next: a quick goals questionnaire so we can plan your first session together.")
+            Text(hasRealPartner
+                 ? "Next: a quick goals questionnaire so we can plan your first session together."
+                 : "Next: a quick goals questionnaire so we can plan your first session. You can invite a partner anytime from your profile.")
                 .font(Theme.Font.sans(14))
                 .foregroundColor(Theme.Color.fgMute)
                 .multilineTextAlignment(.center)
                 .padding(.top, 12)
                 .padding(.horizontal, 24)
-
-            HStack(spacing: 24) {
-                miniStat("2", "Profiles")
-                Rectangle().fill(Theme.Color.hairline).frame(width: 1, height: 36)
-                miniStat("0", "Sessions")
-                Rectangle().fill(Theme.Color.hairline).frame(width: 1, height: 36)
-                miniStat("∞", "Together")
-            }
-            .padding(.vertical, 18)
-            .padding(.top, 20)
 
             Spacer()
             PrimaryCTA(title: "Set your goals", trailingSystemImage: "arrow.right", tall: true, action: onContinue)

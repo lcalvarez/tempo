@@ -8,9 +8,10 @@ import AuthenticationServices
 /// Supabase Auth. Exposes a single `currentUserId` published property the
 /// rest of the app can react to (via `@EnvironmentObject`).
 ///
-/// In the iOS Simulator, Sign in with Apple isn't reliable, so we expose a
-/// `signInWithDevEmail()` escape hatch wired to a magic-link-free email/password
-/// pair that we provision automatically.
+/// In the simulator, Sign in with Apple isn't reliable, so the bootstrap
+/// path (`ensureSignedIn`) creates an anonymous Supabase session up front;
+/// that session is converted to a real account from `SignInScreen` /
+/// Profile → "Save your account" via `linkEmailToCurrentUser`.
 @MainActor
 final class AuthStore: ObservableObject {
 
@@ -133,6 +134,24 @@ final class AuthStore: ObservableObject {
         }
     }
 
+    /// Send a password-recovery email. Supabase always returns success
+    /// here even when the address isn't on file (anti-enumeration), so
+    /// we mirror that and treat "sent" as the only happy path from the
+    /// caller's perspective. Surfaces network/rate-limit errors so the
+    /// UI can show them inline.
+    ///
+    /// Returns `nil` on success, a user-facing error string otherwise.
+    func sendPasswordReset(email: String) async -> String? {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Enter your email first." }
+        do {
+            try await TempoSupabase.client.auth.resetPasswordForEmail(trimmed)
+            return nil
+        } catch {
+            return "Couldn't send reset email: \(error.localizedDescription)"
+        }
+    }
+
     /// Sign up a brand-new email/password account from scratch (no anon
     /// data to preserve). Used when the user explicitly chooses
     /// "Sign in with email" and isn't currently anonymous.
@@ -191,9 +210,44 @@ final class AuthStore: ObservableObject {
     /// session immediately afterwards so the app remains usable —
     /// otherwise we'd be stuck with no `auth.uid()` until the user signs
     /// back in.
+    ///
+    /// Also wipes the on-device AI plan cache for the outgoing user, so
+    /// the next user on the same physical device doesn't see the
+    /// previous user's plan.
     func signOut() async {
+        let outgoing = currentUserId
         try? await TempoSupabase.client.auth.signOut()
         currentUserId = nil
+        if let outgoing {
+            PlannedDayCache.shared.clear(for: outgoing)
+        }
         await ensureSignedIn()
+    }
+
+    /// Permanently delete the signed-in user's account via the
+    /// `delete-user` Supabase Edge Function. The function uses the
+    /// service-role key server-side to call `auth.admin.deleteUser` —
+    /// the row's `id` is taken from the JWT, so an attacker can't ask
+    /// us to delete somebody else's account.
+    ///
+    /// On success we sign out and bootstrap a fresh anonymous session,
+    /// matching `signOut()`'s contract. Returns `nil` on success or a
+    /// user-facing error string.
+    func deleteAccount() async -> String? {
+        guard currentUserId != nil else { return "Not signed in." }
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+        do {
+            try await TempoSupabase.client.functions.invoke("delete-user")
+        } catch let error as FunctionsError {
+            if case .httpError(let code, _) = error {
+                return "Couldn't delete account (HTTP \(code))."
+            }
+            return "Couldn't delete account: \(error.localizedDescription)"
+        } catch {
+            return "Couldn't delete account: \(error.localizedDescription)"
+        }
+        await signOut()
+        return nil
     }
 }

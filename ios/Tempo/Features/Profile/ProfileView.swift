@@ -4,11 +4,6 @@ struct ProfileView: View {
     var onEditGoals: () -> Void = {}
     @EnvironmentObject var store: SessionStore
     @EnvironmentObject var auth: AuthStore
-    @State private var sessionReminders = true
-    @State private var partnerActivity = true
-    @State private var chatNotifs = false
-    @State private var showRPE = false
-    @State private var plateCalc = true
     @State private var showUnpair = false
     @State private var showUnits = false
     @State private var showAppearance = false
@@ -19,6 +14,33 @@ struct ProfileView: View {
     @State private var showInviteSheet = false
     @State private var showSignIn = false
     @State private var signInInitialMode: SignInSheet.InitialMode = .auto
+    @State private var deletingAccount = false
+    @State private var exportShareItem: ExportShareItem? = nil
+
+    /// Bindings into `store.profile.*` for the toggle rows. Centralizing
+    /// them here keeps the body concise and ensures every flip both
+    /// persists (via `SessionStore.profile`'s `didSet`) and triggers a
+    /// debounced server PATCH (via `RemoteSync.markProfileDirty`).
+    private var sessionReminders: Binding<Bool> {
+        Binding(get: { store.profile.sessionRemindersEnabled },
+                set: { store.profile.sessionRemindersEnabled = $0 })
+    }
+    private var partnerActivity: Binding<Bool> {
+        Binding(get: { store.profile.partnerActivityNotifs },
+                set: { store.profile.partnerActivityNotifs = $0 })
+    }
+    private var showRPE: Binding<Bool> {
+        Binding(get: { store.profile.showRPE },
+                set: { store.profile.showRPE = $0 })
+    }
+    private var plateCalc: Binding<Bool> {
+        Binding(get: { store.profile.plateCalcEnabled },
+                set: { store.profile.plateCalcEnabled = $0 })
+    }
+    private var aiPlanning: Binding<Bool> {
+        Binding(get: { store.profile.aiPlanningEnabled },
+                set: { store.profile.aiPlanningEnabled = $0 })
+    }
 
     private enum AccountAction: Identifiable {
         case signOut, delete
@@ -83,11 +105,11 @@ struct ProfileView: View {
                         Button(action: { showAppearance = true }) { chevRow("Appearance", value: store.profile.appearance.label) }
                             .buttonStyle(.plain)
                         Divider().background(Theme.Color.hairline)
-                        toggleRow("Session reminders", hint: "20 min before scheduled start", value: $sessionReminders)
+                        toggleRow("Session reminders", hint: "20 min before scheduled start", value: sessionReminders)
                         Divider().background(Theme.Color.hairline)
-                        toggleRow("Partner activity", hint: "When \(store.partner.name) logs a PR or finishes", value: $partnerActivity)
+                        toggleRow("Partner activity", hint: "When \(store.partner.name) logs a PR or finishes", value: partnerActivity)
                         Divider().background(Theme.Color.hairline)
-                        toggleRow("Chat notifications", hint: nil, value: $chatNotifs)
+                        toggleRow("AI trainer", hint: "Use Apple Intelligence / Sonnet 4.5 to plan", value: aiPlanning)
                     }
 
                     settingsSection(title: "Library", meta: "Your custom exercises") {
@@ -100,13 +122,13 @@ struct ProfileView: View {
                     }
 
                     settingsSection(title: "Advanced", meta: "Optional") {
-                        toggleRow("Show RPE field", hint: "Rate of perceived exertion per set", value: $showRPE)
+                        toggleRow("Show RPE field", hint: "Rate of perceived exertion per set", value: showRPE)
                         Divider().background(Theme.Color.hairline)
-                        toggleRow("Plate calculator", hint: nil, value: $plateCalc)
+                        toggleRow("Plate calculator", hint: nil, value: plateCalc)
                         Divider().background(Theme.Color.hairline)
-                        Button(action: {
-                            store.showToast("Exporting CSV — check your inbox", icon: "square.and.arrow.up")
-                        }) { chevRow("Export data", value: "CSV") }.buttonStyle(.plain)
+                        Button(action: { exportShareItem = makeExportShareItem() }) {
+                            chevRow("Export data", value: "CSV")
+                        }.buttonStyle(.plain)
                     }
 
                     settingsSection(title: "Account") {
@@ -270,14 +292,21 @@ struct ProfileView: View {
             isPresented: $showProfileMenu,
             titleVisibility: .hidden
         ) {
+            // The system share sheet is wired through a tiny helper view
+            // because `confirmationDialog` only takes plain `Button`s.
             Button("Share Tempo with a friend") {
-                store.showToast("Share sheet coming soon", icon: "square.and.arrow.up")
+                exportShareItem = ExportShareItem(url: SupportLinks.appStoreURL)
             }
             Button("Send feedback") {
-                store.showToast("Feedback sent — thanks!", icon: "envelope.fill")
+                if let url = SupportLinks.feedbackMailtoURL(),
+                   UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url)
+                } else {
+                    store.showToast("No mail account on this device", icon: "envelope.fill")
+                }
             }
             Button("Help & FAQ") {
-                store.showToast("Help coming soon", icon: "questionmark.circle")
+                UIApplication.shared.open(SupportLinks.helpURL)
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -296,17 +325,61 @@ struct ProfileView: View {
                 }
             } else if showAccountConfirm == .delete {
                 Button("Delete account", role: .destructive) {
-                    store.showToast("Account deletion is disabled in demo", icon: "exclamationmark.triangle.fill")
                     showAccountConfirm = nil
+                    deletingAccount = true
+                    Task {
+                        let err = await auth.deleteAccount()
+                        deletingAccount = false
+                        if let err {
+                            store.showToast(err, icon: "exclamationmark.triangle.fill")
+                        } else {
+                            // Server side deleted the auth.users row;
+                            // wipe local state too so the app lands on
+                            // onboarding fresh.
+                            store.resetOnboarding()
+                            store.showToast("Account deleted", icon: "trash.fill")
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { showAccountConfirm = nil }
         }
-        .onChange(of: sessionReminders) { _, v in store.showToast(v ? "Session reminders on" : "Session reminders off", icon: "bell.fill") }
-        .onChange(of: partnerActivity) { _, v in store.showToast(v ? "Partner activity on" : "Partner activity off", icon: "person.2.fill") }
-        .onChange(of: chatNotifs)      { _, v in store.showToast(v ? "Chat notifications on" : "Chat notifications off", icon: "bubble.left.fill") }
-        .onChange(of: showRPE)         { _, v in store.showToast(v ? "RPE field on" : "RPE field off", icon: "gauge") }
-        .onChange(of: plateCalc)       { _, v in store.showToast(v ? "Plate calculator on" : "Plate calculator off", icon: "circle.hexagongrid.fill") }
+        .onChange(of: store.profile.sessionRemindersEnabled) { _, v in
+            store.showToast(v ? "Session reminders on" : "Session reminders off", icon: "bell.fill")
+            if v { Task { await NotificationManager.requestAuthorizationIfNeeded() } }
+        }
+        .onChange(of: store.profile.partnerActivityNotifs) { _, v in
+            store.showToast(v ? "Partner activity on" : "Partner activity off", icon: "person.2.fill")
+        }
+        .onChange(of: store.profile.aiPlanningEnabled) { _, v in
+            store.showToast(v ? "AI trainer on" : "AI trainer off", icon: "sparkles")
+        }
+        .onChange(of: store.profile.showRPE) { _, v in
+            store.showToast(v ? "RPE field on" : "RPE field off", icon: "gauge")
+        }
+        .onChange(of: store.profile.plateCalcEnabled) { _, v in
+            store.showToast(v ? "Plate calculator on" : "Plate calculator off", icon: "circle.hexagongrid.fill")
+        }
+        .sheet(item: $exportShareItem) { item in
+            ShareSheet(activityItems: [item.url])
+        }
+    }
+
+    /// Build a CSV of the user's history and write it into a temp file.
+    /// Returned to the share sheet so iOS handles "Save to Files / Mail /
+    /// AirDrop" without us reinventing it. The file lives in the temp
+    /// directory so it gets cleaned up automatically.
+    private func makeExportShareItem() -> ExportShareItem? {
+        let csv = CSVExporter.csv(for: store.history)
+        let dir = FileManager.default.temporaryDirectory
+        let url = dir.appendingPathComponent("tempo-history-\(Int(Date().timeIntervalSince1970)).csv")
+        do {
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+            return ExportShareItem(url: url)
+        } catch {
+            store.showToast("Couldn't build CSV", icon: "exclamationmark.triangle.fill")
+            return nil
+        }
     }
 
     private var confirmTitle: String {
@@ -373,12 +446,29 @@ struct ProfileView: View {
 
     private var planningSummary: String {
         switch store.profile.planningMode {
-        case .ai:     return "AI trainer"
-        case .manual: return "Manual · \(store.profile.manualExerciseIds.count)"
+        case .ai:
+            // Surface which planner produced today's plan so users can
+            // tell the difference between Apple's on-device tier and the
+            // server LLM. `lastPlannerLabel` is empty until the first
+            // generation completes — fall back to plain "AI trainer".
+            let label = store.lastPlannerLabel
+            return label.isEmpty ? "AI trainer" : "AI trainer · \(label)"
+        case .manual:
+            return "Manual · \(store.profile.manualExerciseIds.count)"
         }
     }
 
-    private func daysPaired() -> Int { 47 }   // TODO: from pairedSince date
+    /// Days since the partnership was created. Reads from
+    /// `partner.pairedSinceDate` (set by `applyRemotePartner` from the
+    /// server's `pairedSince` timestamp); falls back to 0 when we don't
+    /// have a real date yet (just-loaded, never paired, etc.).
+    private func daysPaired() -> Int {
+        guard let since = store.partner.pairedSinceDate else { return 0 }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let then = cal.startOfDay(for: since)
+        return max(0, cal.dateComponents([.day], from: then, to: today).day ?? 0)
+    }
 
     private var partnerCard: some View {
         VStack(spacing: 16) {

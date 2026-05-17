@@ -26,8 +26,9 @@ a prototype — every screen reads/writes real rows.
 | Pairing              | `public.partnerships` + `pair_invites` + RPCs (`create_pair_invite`, `accept_pair_invite`, `set_relationship_label`) | ✅ |
 | Partner view         | `public.my_partner` (RLS-gated) | ✅ |
 | Sessions / exercises / sets | `public.sessions` + `exercises` + `sets` (3-table batch insert) | ✅ |
-| Realtime             | `public.live_sessions` (added to `supabase_realtime` publication) | ✅ |
+| Realtime             | `public.live_sessions` (added to `supabase_realtime` publication) + `public.partnerships` | ✅ |
 | RLS                  | Every table — own + partner read where applicable, own write only | ✅ |
+| Edge Functions       | `generate-plan` (Anthropic Sonnet 4.5, JWT-auth, per-user/day rate limit via `plan_generation_log`); `delete-user` (privileged self-delete) | ✅ |
 
 ### iOS client (`ios/Tempo/`)
 
@@ -44,6 +45,7 @@ a prototype — every screen reads/writes real rows.
 | Pair partner (SMS / deep link) | `Features/Pairing/InvitePartnerScreen.swift` | ✅ |
 | Email/password sign-in | `Features/Auth/SignInScreen.swift` (`SignInSheet`) | ✅ — 3 explicit modes (save / sign in / switch) |
 | Sync + realtime        | `Supabase/RemoteSync.swift` | ✅ |
+| AI planner (tiered)    | `AI/PlannerService.swift` (Foundation Models → Anthropic → heuristic), once-per-day cache via `PlannedDayCache` | ✅ |
 
 ### Test coverage (`scripts/smoke-*.sh`)
 
@@ -317,8 +319,14 @@ they're the next pieces of work after v1 is out.
   flow already exists in `AuthStore.signInWithApple`). The button was
   removed from onboarding for v1; "Continue with email" + "Continue as
   guest" are the two functional paths.
-- Goals "regenerate plan" → today's plan currently uses `PlanGenerator` (a
-  rule-based mock). Replace with a server-side function or an LLM call.
+- AI planner is now tiered (Apple Foundation Models → Anthropic Sonnet 4.5
+  via `generate-plan` Edge Function → heuristic fallback). Set
+  `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`) on the cloud
+  project before TestFlight, otherwise tier 2 returns 502 and every
+  device falls through to the heuristic. See `supabase/README.md`.
+- Profile-photo storage. Onboarding now writes the JPEG to
+  `UserProfile.avatarData` locally. v1.1 should add a Supabase Storage
+  bucket + `profiles.avatar_url` column and upload on edit.
 - Bundle Geist / Geist Mono fonts; `Theme.Font` falls back to SF.
 - Move simulator-driven smoke scripts to a macOS GitHub Actions runner
   job alongside `ios-build.yml`.

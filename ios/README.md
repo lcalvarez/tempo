@@ -38,25 +38,30 @@ section at the bottom — buttons to open each one. Remove that section from
 
 ```
 Tempo/
-├── TempoApp.swift          # @main entry, injects SessionStore
+├── TempoApp.swift          # @main entry, injects SessionStore + AuthStore + RemoteSync
 ├── RootView.swift          # 4-tab shell + fullScreenCover routes
-├── Theme/
-│   └── Theme.swift         # Design tokens (colors, type scale, radii, card modifier)
-├── Models/
-│   └── Models.swift        # SessionPlan, ExercisePlan, HistoryEntry, SessionStore
-├── Components/
-│   ├── Avatar.swift        # Avatar (you/partner/neutral/accent) + PartnerPip
-│   ├── Buttons.swift       # PrimaryCTA, SecondaryCTA, IconButton, LinkButton
-│   ├── Progress.swift      # ProgressStrip + DualProgress
-│   └── Chrome.swift        # TopBar, SectionHead, KPI
+├── Theme/                  # Design tokens
+├── Models/                 # SessionPlan, ExercisePlan, SessionStore, heuristic PlanGenerator
+├── Components/             # Avatar, Buttons, Progress, Chrome
+├── Supabase/               # Live Supabase wiring (auth, sync, realtime)
+├── AI/                     # Tiered planner (Apple → Anthropic → heuristic)
+│   ├── PlanProvider.swift              # Protocol + PlannerService (tier walker, validation)
+│   ├── PlannedDayCache.swift           # Once-per-day on-device cache
+│   ├── HeuristicPlanProvider.swift     # Wraps PlanGenerator
+│   ├── FoundationModelsPlanProvider.swift  # Apple Intelligence (iOS 26+)
+│   └── AnthropicPlanProvider.swift     # Calls the generate-plan Edge Function
 └── Features/
     ├── Today/              # 3-state Today screen
     ├── ActiveSession/      # Strength composition + bottom plan sheet
+    ├── Schedule/           # Vertical timeline (replaces History as a tab)
     ├── History/            # Filterable session list
-    ├── Progress/           # Charts + heatmap (renders ProgressView)
-    ├── Profile/            # Settings + unpair sheet
+    ├── Progress/           # Charts + heatmap
+    ├── Profile/            # Settings + unpair sheet (+ ProfileSupport.swift helpers)
     ├── PostSession/        # Comparison + PR moment
-    └── Onboarding/         # 7-screen flow
+    ├── Onboarding/         # 7-screen flow
+    ├── Goals/              # 4-screen goals questionnaire
+    ├── Pairing/            # Invite partner screen
+    └── Auth/               # SignInScreen / SignInSheet
 ```
 
 ## Design system notes
@@ -74,12 +79,27 @@ Tempo/
   state of set chips, the in-tempo dot, and the heatmap fill. Partner blue/amber
   are ambient context only. PR gold is reserved for celebration.
 
-## Data layer (stubbed)
+## Data layer
 
-`SessionStore` is an `@StateObject` published into the environment. It carries
-the partner record, the today plan, and a few live-session values used by the
-Active Session view. There's no networking, persistence, or AI integration —
-the brief's V1 realtime layer is the next thing to wire up.
+`SessionStore` is an `@StateObject` published into the environment. It owns
+the user's profile, partner snapshot, today plan, and live-session
+transient state. Writes flow through `RemoteSync` (debounced PATCHes,
+realtime publish/subscribe) — the local store is a write-through cache so
+the UI paints instantly on cold launch.
+
+## AI planner
+
+The tiered `PlannerService` (in `AI/`) generates `SessionPlan`s. Walks
+Apple Foundation Models (iOS 26+) → Anthropic Sonnet 4.5 (via the
+`generate-plan` Edge Function) → heuristic `PlanGenerator`. AI tiers
+write through `PlannedDayCache` so a day's worth of "Regenerate" taps
+returns the same plan instantly; heuristic results bypass the cache so a
+flaky network on the morning of doesn't lock the user into a fallback.
+
+The user can disable the AI tiers via Profile → Preferences → "AI
+trainer". Profile → Goals row shows which engine produced today's plan
+(`AI trainer · Apple`, `AI trainer · Sonnet 4.5`, or `AI trainer ·
+Heuristic`).
 
 ## Testing the Supabase backend locally
 
@@ -157,11 +177,10 @@ That's a sensible next step.
 
 1. **Real fonts.** Bundle Geist + Geist Mono `.ttf` files and switch
    `Theme.Font.sans` / `.mono` to use the registered names.
-2. **Goals questionnaire (4 screens).** Build out matching the `goals.jsx`
-   designs — answer cards grid, frequency slider, intensity rows, styles chips.
-3. **Adjust-set sheet, in-session chat, demo-video overlay** — referenced in
-   the brief but not designed in v1; stub during the design pass.
-4. **Realtime layer.** The brief is explicit that partner presence must be
-   wired up early. Mock with a Combine publisher on `SessionStore`, then swap
-   for the real subscription.
-5. **Persistence + AI plan generation** — out of scope for the UI port.
+2. **Sign in with Apple in onboarding.** `AuthStore.signInWithApple` is
+   wired up; the onboarding `SignInScreen` doesn't yet invoke it.
+3. **Profile photo upload to Supabase Storage.** Currently
+   `UserProfile.avatarData` holds a compressed JPEG locally; v1.1 should
+   upload to a `profile-photos` bucket and store the URL.
+4. **In-session chat / demo-video overlay** — referenced in the brief but
+   intentionally not in v1.

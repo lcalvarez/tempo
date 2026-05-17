@@ -10,6 +10,9 @@ supabase/
 ├── config.toml          Auth providers, realtime, project settings (committed)
 ├── migrations/          Timestamped SQL files, applied in order
 │   └── ..._initial_schema.sql
+├── functions/           Deno Edge Functions (deployed via supabase functions deploy)
+│   ├── generate-plan/   Anthropic Sonnet 4.5 paired planner (per-user/day rate-limited)
+│   └── delete-user/     Privileged auth.admin.deleteUser for "Delete account"
 ├── seed.sql             Demo data for local dev (never runs on cloud)
 └── README.md            ← you are here
 
@@ -105,12 +108,37 @@ Every table has RLS. Two helper RPCs handle the partnership flow safely:
 Both are `SECURITY DEFINER` so they bypass RLS to enforce the canonical
 ordering constraint.
 
+## Edge Functions
+
+| Function        | Purpose                                                                                                       |
+|-----------------|---------------------------------------------------------------------------------------------------------------|
+| `generate-plan` | Calls Anthropic Sonnet 4.5 to produce a paired session plan. JWT-authenticated. One generation per user/day.  |
+| `delete-user`   | Privileged `auth.admin.deleteUser(uid_from_jwt)` for the Profile → "Delete account" path.                     |
+
+Required secrets (set with `supabase secrets set NAME=value`):
+
+```
+ANTHROPIC_API_KEY=sk-ant-…
+ANTHROPIC_MODEL=claude-sonnet-4-5      # optional; defaults to claude-sonnet-4-5
+```
+
+Locally, drop these in `supabase/.env` and run `supabase functions serve`.
+
+The iOS planner walks a tier list at `PlannerService` (in
+`ios/Tempo/AI/`):
+
+1. **Apple Foundation Models** — on-device, iOS 26+, Apple Intelligence-capable hardware. Free, private, offline.
+2. **Anthropic Sonnet 4.5** — via this `generate-plan` Edge Function. Used when the device can't run tier 1.
+3. **Heuristic** (`PlanGenerator` in `Models.swift`) — deterministic, rule-based fallback when both AI tiers fail or AI is disabled in Profile.
+
+Tiers 1 and 2 cache once-per-local-day on-device (`PlannedDayCache`) so a
+day's worth of "Regenerate" taps always returns the same plan instantly.
+Heuristic results bypass the cache.
+
 ## What's NOT in here
 
-- **Edge Functions.** The workout planner (`PlanGenerator.swift`) is
-  intentionally on-device. No server roundtrip per session.
-- **Storage.** No user-uploaded images yet (monogram-only).
+- **Storage.** No user-uploaded images yet (monogram + local JPEG only).
 - **Vector / embeddings.** No AI search.
 
-Each of these is a one-command add when needed (`supabase functions new`,
-add a `[storage.buckets.*]` block, etc.).
+Each of these is a one-command add when needed (add a
+`[storage.buckets.*]` block, etc.).

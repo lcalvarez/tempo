@@ -39,6 +39,11 @@ struct SignInSheet: View {
     @State private var inFlight = false
     @State private var inlineError: String?
     @State private var showAbandonConfirm = false
+    @State private var sendingReset = false
+    /// Latched true once a recovery email has been dispatched for the
+    /// current email value. Resets when the user edits the email field
+    /// or flips modes, so the affirmative state never lingers stale.
+    @State private var resetSent = false
     @FocusState private var focusedField: Field?
 
     init(onClose: @escaping () -> Void, initialMode: InitialMode = .auto) {
@@ -80,11 +85,65 @@ struct SignInSheet: View {
         }
     }
 
-    private var canSubmit: Bool {
-        !inFlight
-            && email.contains("@")
-            && password.count >= 6
+    // MARK: - Validation
+    //
+    // We validate live as the user types and reflect state via field
+    // border colors (red while wrong, green once right) plus a small
+    // checklist under the password input. The primary button stays
+    // *enabled* as soon as both inputs are valid — no silent grey-out
+    // mystery — and only locks while a request is in flight.
+    //
+    // Email: simple "looks-like" RFC check (something@something.tld).
+    // We don't try to perfectly validate against RFC 5321 — server has
+    // the final say.
+    //
+    // Password rules: 6+ chars, ≥1 digit, ≥1 non-alphanumeric symbol.
+    // For `signIn` / `switchAccount` we *only* care that the password
+    // is non-empty — we're matching what's on file, not enforcing
+    // creation rules. Stricter rules would lock out legacy users.
+
+    /// Cached regex; one allocation per process.
+    private static let emailRegex: NSRegularExpression = {
+        // Conservative pattern: local@host.tld, no whitespace, ≥2-char TLD.
+        let pat = #"^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$"#
+        return try! NSRegularExpression(pattern: pat, options: [.caseInsensitive])
+    }()
+
+    private var trimmedEmail: String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private var isEmailValid: Bool {
+        let s = trimmedEmail
+        guard !s.isEmpty else { return false }
+        let range = NSRange(s.startIndex..., in: s)
+        return Self.emailRegex.firstMatch(in: s, range: range) != nil
+    }
+
+    private var passwordHasMinLength: Bool { password.count >= 6 }
+    private var passwordHasDigit: Bool { password.contains(where: \.isNumber) }
+    /// "Standard symbol" = any non-alphanumeric, non-whitespace character.
+    /// We're lenient on which symbol so non-US keyboards aren't penalized.
+    private var passwordHasSymbol: Bool {
+        password.contains { !$0.isLetter && !$0.isNumber && !$0.isWhitespace }
+    }
+
+    /// Strict password rules apply only when *creating* a credential
+    /// (saveAccount). Sign-in just needs a non-empty string.
+    private var requiresStrongPassword: Bool {
+        mode == .saveAccount
+    }
+
+    private var isPasswordValid: Bool {
+        if requiresStrongPassword {
+            return passwordHasMinLength && passwordHasDigit && passwordHasSymbol
+        } else {
+            return !password.isEmpty
+        }
+    }
+
+    private var inputsValid: Bool { isEmailValid && isPasswordValid }
+    private var canSubmit: Bool { !inFlight && inputsValid }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,37 +159,52 @@ struct SignInSheet: View {
                           isSecure: false,
                           contentType: .emailAddress,
                           keyboard: .emailAddress,
-                          focused: .email)
+                          focused: .email,
+                          validity: emailValidity())
 
                     field(label: "Password",
                           systemImage: "lock",
                           text: $password,
                           isSecure: true,
-                          contentType: .password,
+                          contentType: requiresStrongPassword ? .newPassword : .password,
                           keyboard: .default,
-                          focused: .password)
+                          focused: .password,
+                          validity: passwordValidity())
+
+                    // Only show the per-rule checklist while *creating*
+                    // credentials. For sign-in we don't enforce these,
+                    // and showing the list would mislead the user into
+                    // thinking their existing password is wrong.
+                    if requiresStrongPassword {
+                        passwordRuleList
+                    }
+
+                    if mode == .signIn || mode == .switchAccount {
+                        forgotPasswordRow
+                    }
 
                     if let inlineError {
                         Label(inlineError, systemImage: "exclamationmark.triangle.fill")
                             .font(Theme.Font.sans(12))
-                            .foregroundColor(.red.opacity(0.85))
+                            .foregroundColor(Theme.Color.dangerSoft)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.10))
+                            .background(Theme.Color.danger.opacity(0.10))
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
 
                     Button(action: handlePrimary) {
                         HStack(spacing: 8) {
                             if inFlight {
-                                ProgressView().controlSize(.small).tint(Theme.Color.fg)
+                                ProgressView().controlSize(.small).tint(Theme.Color.accentInk)
                             }
                             Text(primaryTitle).font(Theme.Font.sans(15, .semibold))
                         }
-                        .foregroundColor(Theme.Color.fg)
+                        .foregroundColor(canSubmit ? Theme.Color.accentInk : Theme.Color.fgFaint)
                         .frame(maxWidth: .infinity).frame(height: 50)
                         .background(canSubmit ? Theme.Color.accent : Theme.Color.bgElev2)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                        .animation(.easeInOut(duration: 0.15), value: canSubmit)
                     }
                     .disabled(!canSubmit)
 
@@ -141,6 +215,12 @@ struct SignInSheet: View {
                 .padding(.bottom, 28)
             }
         }
+        .onChange(of: email) { _, _ in
+            // Any edit invalidates the previous "sent" affirmation —
+            // otherwise we'd be reassuring the user the link went to
+            // an address they no longer have on screen.
+            if resetSent { resetSent = false }
+        }
         .alert("Replace guest data?", isPresented: $showAbandonConfirm) {
             Button("Cancel", role: .cancel) { }
             Button("Replace", role: .destructive) {
@@ -149,6 +229,70 @@ struct SignInSheet: View {
         } message: {
             Text(replaceConfirmCopy)
         }
+    }
+
+    /// Tiny checklist of password rules. Each row shows a circle that
+    /// fills green once satisfied — gives the user something concrete
+    /// to type towards instead of a vague "password rejected" later.
+    private var passwordRuleList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            passwordRuleRow("At least 6 characters", satisfied: passwordHasMinLength)
+            passwordRuleRow("Includes a number", satisfied: passwordHasDigit)
+            passwordRuleRow("Includes a symbol (! @ # …)", satisfied: passwordHasSymbol)
+        }
+        .padding(.top, -8) // tuck right under the password field
+    }
+
+    private func passwordRuleRow(_ text: String, satisfied: Bool) -> some View {
+        // Neutral grey until the user starts typing, then red/green per
+        // rule. Keeps the form quiet on first display.
+        let typed = !password.isEmpty
+        let color: Color = !typed ? Theme.Color.fgFaint
+            : satisfied ? Theme.Color.accent : Theme.Color.dangerSoft
+        let icon = !typed ? "circle"
+            : satisfied ? "checkmark.circle.fill" : "xmark.circle.fill"
+        return HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(color)
+            Text(text)
+                .font(Theme.Font.sans(12))
+                .foregroundColor(color)
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.15), value: satisfied)
+    }
+
+    /// "Forgot password?" + an inline confirmation. We don't open a
+    /// separate sheet — the email field is already on screen, so the
+    /// link reads as a "use the email you typed above" action. If the
+    /// email is missing/invalid we ask for it before sending.
+    private var forgotPasswordRow: some View {
+        HStack(spacing: 6) {
+            if resetSent {
+                Image(systemName: "envelope.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Theme.Color.accent)
+                Text("Reset link sent. Check your inbox.")
+                    .font(Theme.Font.sans(12, .medium))
+                    .foregroundColor(Theme.Color.accent)
+            } else {
+                Button(action: handleForgotPassword) {
+                    HStack(spacing: 6) {
+                        if sendingReset {
+                            ProgressView().controlSize(.mini)
+                        }
+                        Text(sendingReset ? "Sending…" : "Forgot password?")
+                            .font(Theme.Font.sans(13, .medium))
+                            .foregroundColor(Theme.Color.fgSoft)
+                            .underline(true, color: Theme.Color.fgFaint)
+                    }
+                }
+                .disabled(sendingReset)
+            }
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.2), value: resetSent)
     }
 
     // MARK: - Subviews
@@ -235,6 +379,13 @@ struct SignInSheet: View {
         }
     }
 
+    /// Tri-state of "should I color the border?": none until the user
+    /// has typed anything, then danger or accent depending on whether
+    /// the current value passes its rule. We deliberately stay neutral
+    /// on empty fields so we don't yell at users before they've had a
+    /// chance to type.
+    private enum FieldValidity { case neutral, invalid, valid }
+
     @ViewBuilder
     private func field(label: String,
                        systemImage: String,
@@ -242,7 +393,17 @@ struct SignInSheet: View {
                        isSecure: Bool,
                        contentType: UITextContentType,
                        keyboard: UIKeyboardType,
-                       focused: Field) -> some View {
+                       focused: Field,
+                       validity: FieldValidity = .neutral) -> some View {
+        let borderColor: Color = {
+            switch validity {
+            case .neutral: return Theme.Color.hairline
+            case .invalid: return Theme.Color.danger
+            case .valid:   return Theme.Color.accent
+            }
+        }()
+        let borderWidth: CGFloat = validity == .neutral ? 1 : 1.5
+
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
                 .font(Theme.Font.mono(10, .medium))
@@ -266,19 +427,43 @@ struct SignInSheet: View {
                 .keyboardType(keyboard)
                 .font(Theme.Font.sans(15))
                 .foregroundColor(Theme.Color.fg)
+
+                if validity == .valid {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Theme.Color.accent)
+                        .transition(.opacity)
+                }
             }
             .padding(.horizontal, 14)
             .frame(height: 48)
             .background(Theme.Color.bgElev1)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).strokeBorder(Theme.Color.hairline, lineWidth: 1))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .strokeBorder(borderColor, lineWidth: borderWidth)
+            )
+            .animation(.easeInOut(duration: 0.15), value: validity)
         }
+    }
+
+    /// Compute the field's tri-state from the live input + the field's
+    /// own validity predicate. Empty → neutral; non-empty → red/green.
+    private func emailValidity() -> FieldValidity {
+        if trimmedEmail.isEmpty { return .neutral }
+        return isEmailValid ? .valid : .invalid
+    }
+
+    private func passwordValidity() -> FieldValidity {
+        if password.isEmpty { return .neutral }
+        return isPasswordValid ? .valid : .invalid
     }
 
     // MARK: - Mode handling
 
     private func setMode(_ next: Mode) {
         inlineError = nil
+        resetSent = false
         mode = next
     }
 
@@ -345,6 +530,31 @@ struct SignInSheet: View {
         }
         let err = await auth.signIn(email: email, password: password)
         handleResult(err, successMessage: "Signed in")
+    }
+
+    /// "Forgot password?" tap. Validates the email field is at least
+    /// plausibly an address (we don't want to spam Supabase with `aaa`
+    /// or empty strings), then dispatches the recovery email. We show
+    /// a persistent "sent" state on success and an inline error on
+    /// failure — never both at once.
+    private func handleForgotPassword() {
+        guard !sendingReset else { return }
+        guard isEmailValid else {
+            inlineError = "Enter your email above first, then tap Forgot password."
+            focusedField = .email
+            return
+        }
+        inlineError = nil
+        sendingReset = true
+        Task {
+            let err = await auth.sendPasswordReset(email: trimmedEmail)
+            sendingReset = false
+            if let err {
+                inlineError = friendly(err)
+            } else {
+                resetSent = true
+            }
+        }
     }
 
     private func handleResult(_ err: String?, successMessage: String) {

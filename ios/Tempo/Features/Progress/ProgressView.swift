@@ -3,20 +3,19 @@ import SwiftUI
 /// Renamed to `ProgressView` (collides with SwiftUI's ProgressView at call sites —
 /// we always reference it as `ProgressView` from inside the Tempo module so the
 /// local symbol takes precedence). For safety we additionally namespace via filename.
+///
+/// Everything on this screen is computed from `store.history` — no hardcoded
+/// numbers. When a user has zero logged sessions (the typical state on a
+/// fresh phone install), the screen shows a single empty-state card instead
+/// of the usual KPI/volume/lifts/coverage stack.
 struct ProgressView: View {
     @EnvironmentObject var store: SessionStore
     @State private var range = "1M"
     @State private var liftForDetail: TopLift? = nil
     private let ranges = ["1W", "1M", "3M", "1Y"]
 
-    private let topLifts: [TopLift] = [
-        .init(name: "Back squat", best: "200 lb × 6", delta: "+5 lb", direction: .up),
-        .init(name: "Bench press", best: "170 lb × 5", delta: "+5 lb", direction: .up),
-        .init(name: "Romanian deadlift", best: "155 lb × 8", delta: "—", direction: .flat),
-        .init(name: "Pull-up", best: "12 reps", delta: "+2", direction: .up),
-    ]
-
     var body: some View {
+        let metrics = ProgressMetrics.compute(history: store.history, range: range)
         VStack(spacing: 0) {
             TopBar(
                 title: "Progress",
@@ -27,86 +26,24 @@ struct ProgressView: View {
 
             ScrollView {
                 VStack(spacing: 18) {
-                    // KPI card
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("This month".uppercased()).overlineStyle()
-                        KPIRow([
-                            (value: "17",       unit: "Sessions"),
-                            (value: "12h 32m",  unit: "Active"),
-                            (value: "5",        unit: "PRs"),
-                        ])
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .card(padding: 0)
+                    if metrics.sessionCount == 0 {
+                        emptyStateCard
+                    } else {
+                        kpiCard(metrics: metrics)
 
-                    // Volume chart
-                    ChartCard(title: "Volume · weekly", value: "42,800", delta: "▲ 14%",
-                              onTap: { store.showToast("Detailed volume chart coming soon", icon: "chart.bar.fill") }) {
-                        BarChartView(values: [0.6, 0.78, 0.55, 0.9, 0.72, 0.85, 1.0])
-                            .frame(height: 90)
-                        HStack {
-                            ForEach(["W1","W2","W3","W4","W5","W6","W7"], id: \.self) { w in
-                                Text(w).font(Theme.Font.mono(10)).foregroundColor(Theme.Color.fgFaint)
-                                    .frame(maxWidth: .infinity)
-                            }
+                        // Volume chart only earns its keep once the user has
+                        // at least 2 sessions in the window — a single bar
+                        // is not a "trend".
+                        if metrics.totalVolume > 0 && metrics.sessionCount >= 2 {
+                            volumeCard(metrics: metrics)
                         }
-                        .padding(.horizontal, 6)
-                    }
 
-                    // 1RM chart
-                    ChartCard(title: "Squat · est. 1RM", value: "238 lb", delta: "▲ 8 lb",
-                              onTap: { store.showToast("1RM history coming soon", icon: "waveform.path.ecg") }) {
-                        LineChartView(
-                            you: [70,64,58,62,50,54,42,46,36,28,24],
-                            partner: [80,78,70,72,66,60,62,54,50,48,42]
-                        )
-                        .frame(height: 110)
-                        HStack {
-                            Text("Apr 14").font(Theme.Font.mono(10)).foregroundColor(Theme.Color.fgFaint)
-                            Spacer()
-                            Text("May 14").font(Theme.Font.mono(10)).foregroundColor(Theme.Color.fgFaint)
+                        if !metrics.topLifts.isEmpty {
+                            topLiftsCard(metrics: metrics)
                         }
-                        HStack(spacing: 14) {
-                            HStack(spacing: 4) {
-                                Circle().fill(Theme.Color.you).frame(width: 6, height: 6)
-                                Text(store.profile.youLabel).labelStyle(color: Theme.Color.you)
-                            }
-                            HStack(spacing: 4) {
-                                Circle().fill(Theme.Color.partner).frame(width: 6, height: 6)
-                                Text(store.partner.name).labelStyle(color: Theme.Color.partner)
-                            }
-                        }
-                    }
 
-                    // Top lifts list
-                    VStack(spacing: 0) {
-                        SectionHead(title: "Top lifts", meta: "Tap for chart")
-                            .padding(.bottom, 8)
-                        VStack(spacing: 0) {
-                            ForEach(topLifts) { lift in
-                                Button(action: { liftForDetail = lift }) {
-                                    topLiftRow(lift)
-                                }
-                                .buttonStyle(.plain)
-                                if lift.id != topLifts.last?.id {
-                                    Divider().background(Theme.Color.hairline)
-                                }
-                            }
-                        }
-                        .card(padding: 0)
-                    }
-
-                    // Coverage heatmap
-                    ChartCard(title: "Coverage · last 6 weeks", value: nil, delta: nil, meta: "By muscle group",
-                              onTap: { store.showToast("Muscle-group coverage detail coming soon", icon: "square.grid.3x3.fill") }) {
-                        VStack(spacing: 8) {
-                            heatmapRow("Quads",     cells: [3,2,4,1,3,4,2], val: "19 sessions")
-                            heatmapRow("Hamstrings",cells: [2,3,2,2,3,2,4], val: "18 sessions")
-                            heatmapRow("Glutes",    cells: [3,4,2,3,3,4,3], val: "22 sessions")
-                            heatmapRow("Chest",     cells: [1,2,0,2,1,2,1], val: "9 sessions")
-                            heatmapRow("Back",      cells: [2,1,2,3,2,1,3], val: "14 sessions")
-                            heatmapRow("Core",      cells: [2,2,3,2,3,2,3], val: "17 sessions")
+                        if !metrics.coverage.isEmpty {
+                            coverageCard(metrics: metrics)
                         }
                     }
                 }
@@ -115,11 +52,106 @@ struct ProgressView: View {
             }
         }
         .sheet(item: $liftForDetail) { lift in
-            LiftDetailSheet(lift: lift)
+            LiftDetailSheet(lift: lift, history: store.history)
                 .presentationDetents([.medium, .large])
                 .presentationBackground(Theme.Color.bgElev1)
         }
     }
+
+    // MARK: - Cards
+
+    /// Big "you have no data yet" card. Replaces every chart on the screen
+    /// when history is empty so the user isn't staring at "0 sessions ·
+    /// 0h 0m · 0 PRs" with empty rectangles below.
+    private var emptyStateCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Progress".uppercased()).overlineStyle()
+            Text("No sessions yet")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(Theme.Color.fg)
+            Text("Train and finish a session — your KPIs, top lifts, and muscle-group coverage will appear here.")
+                .font(Theme.Font.sans(13))
+                .foregroundColor(Theme.Color.fgMute)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .card(padding: 0)
+    }
+
+    private func kpiCard(metrics: ProgressMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(metrics.range.kpiHeader.uppercased()).overlineStyle()
+            KPIRow([
+                (value: "\(metrics.sessionCount)",        unit: metrics.sessionCount == 1 ? "Session" : "Sessions"),
+                (value: formatDuration(metrics.activeSeconds), unit: "Active"),
+                (value: "\(metrics.prCount)",             unit: metrics.prCount == 1 ? "PR" : "PRs"),
+            ])
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .card(padding: 0)
+    }
+
+    private func volumeCard(metrics: ProgressMetrics) -> some View {
+        let totalLabel = formatVolume(metrics.totalVolume)
+        let deltaLabel = metrics.volumeDeltaLabel
+        return ChartCard(
+            title: "Volume · \(metrics.range.bucketGranularity)",
+            value: totalLabel,
+            delta: deltaLabel,
+            onTap: nil
+        ) {
+            BarChartView(values: metrics.volumeBucketsNormalized)
+                .frame(height: 90)
+            HStack {
+                ForEach(Array(metrics.volumeBucketLabels.enumerated()), id: \.offset) { _, label in
+                    Text(label)
+                        .font(Theme.Font.mono(10))
+                        .foregroundColor(Theme.Color.fgFaint)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 6)
+        }
+    }
+
+    private func topLiftsCard(metrics: ProgressMetrics) -> some View {
+        VStack(spacing: 0) {
+            SectionHead(title: "Top lifts", meta: "Tap for details")
+                .padding(.bottom, 8)
+            VStack(spacing: 0) {
+                ForEach(metrics.topLifts) { lift in
+                    Button(action: { liftForDetail = lift }) {
+                        topLiftRow(lift)
+                    }
+                    .buttonStyle(.plain)
+                    if lift.id != metrics.topLifts.last?.id {
+                        Divider().background(Theme.Color.hairline)
+                    }
+                }
+            }
+            .card(padding: 0)
+        }
+    }
+
+    private func coverageCard(metrics: ProgressMetrics) -> some View {
+        ChartCard(
+            title: "Coverage · \(metrics.range.shortLabel)",
+            value: nil,
+            delta: nil,
+            meta: "By muscle group",
+            onTap: nil
+        ) {
+            VStack(spacing: 8) {
+                ForEach(metrics.coverage) { row in
+                    heatmapRow(row.muscle, cells: row.cells, val: "\(row.total) session\(row.total == 1 ? "" : "s")")
+                }
+            }
+        }
+    }
+
+    // MARK: - Sub-rows
 
     private func topLiftRow(_ lift: TopLift) -> some View {
         HStack {
@@ -154,7 +186,7 @@ struct ProgressView: View {
                 HStack(spacing: 4) {
                     ForEach(0..<cells.count, id: \.self) { i in
                         Rectangle()
-                            .fill(Theme.Color.accent.opacity(Double(cells[i]) / 4 * 0.85))
+                            .fill(Theme.Color.accent.opacity(min(1.0, Double(cells[i]) / 4) * 0.85))
                             .frame(height: 20)
                             .overlay(
                                 Rectangle().strokeBorder(Theme.Color.hairline, lineWidth: 0.5)
@@ -169,6 +201,327 @@ struct ProgressView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Formatting
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        if h == 0 { return "\(m)m" }
+        return "\(h)h \(m)m"
+    }
+
+    private func formatVolume(_ pounds: Int) -> String {
+        // Avoid Foundation's number formatter for one-off use; thousands
+        // separator only.
+        let s = "\(pounds)"
+        guard pounds >= 1000 else { return s }
+        var out = ""
+        for (i, ch) in s.reversed().enumerated() {
+            if i > 0 && i % 3 == 0 { out.append(",") }
+            out.append(ch)
+        }
+        return String(out.reversed())
+    }
+}
+
+// MARK: - Range model
+
+private extension String {
+    /// Map the segmented control's "1W" / "1M" / "3M" / "1Y" string into
+    /// the typed `TimeRange` we use for math. Falls back to month so a
+    /// stale/unexpected string doesn't crash.
+    var asTimeRange: TimeRange {
+        TimeRange(rawValue: self) ?? .month
+    }
+}
+
+enum TimeRange: String {
+    case week = "1W"
+    case month = "1M"
+    case threeMonths = "3M"
+    case year = "1Y"
+
+    var days: Int {
+        switch self {
+        case .week:        return 7
+        case .month:       return 30
+        case .threeMonths: return 90
+        case .year:        return 365
+        }
+    }
+
+    /// Header text on the KPI card for this range.
+    var kpiHeader: String {
+        switch self {
+        case .week:        return "This week"
+        case .month:       return "This month"
+        case .threeMonths: return "Last 3 months"
+        case .year:        return "This year"
+        }
+    }
+
+    /// Mid-card meta that says what the bar buckets actually represent.
+    var bucketGranularity: String {
+        switch self {
+        case .week:        return "daily"
+        case .month:       return "weekly"
+        case .threeMonths: return "biweekly"
+        case .year:        return "monthly"
+        }
+    }
+
+    var shortLabel: String { rawValue.lowercased() }
+}
+
+// MARK: - Metrics
+
+/// Output of `compute(history:range:)`. Pure values — no Views, no SwiftUI
+/// types — so this can be unit-tested in isolation if we ever want to.
+struct ProgressMetrics {
+    let range: TimeRange
+
+    // KPIs
+    let sessionCount: Int
+    let activeSeconds: Int
+    let prCount: Int
+
+    // Volume bar chart
+    let totalVolume: Int               // sum of reps * weight across the window
+    let prevTotalVolume: Int           // same metric for the *previous* window of the same length, for the delta arrow
+    let volumeBucketsNormalized: [Double]   // 7 values in 0...1
+    let volumeBucketLabels: [String]   // 7 short labels, one per bucket
+
+    // Top lifts
+    let topLifts: [TopLift]
+
+    // Coverage heatmap
+    struct CoverageRow: Identifiable {
+        let id = UUID()
+        let muscle: String
+        /// Per-bucket session counts (same 7 buckets as the volume chart).
+        let cells: [Int]
+        /// Total sessions touching this muscle group across the window.
+        let total: Int
+    }
+    let coverage: [CoverageRow]
+
+    var volumeDeltaLabel: String? {
+        guard prevTotalVolume > 0 else { return nil }   // can't compute % vs zero
+        let delta = totalVolume - prevTotalVolume
+        let pct = Double(delta) / Double(prevTotalVolume) * 100
+        let arrow = delta > 0 ? "▲" : (delta < 0 ? "▼" : "—")
+        return String(format: "%@ %.0f%%", arrow, abs(pct))
+    }
+
+    /// Bucket the window into 7 equal-sized time slices. Returns inclusive
+    /// `[start, end)` Date pairs, oldest first.
+    static func sevenBuckets(now: Date, range: TimeRange) -> [(Date, Date)] {
+        let cal = Calendar.current
+        let secondsTotal = TimeInterval(range.days) * 86_400
+        let bucketSeconds = secondsTotal / 7
+        let windowStart = now.addingTimeInterval(-secondsTotal)
+        return (0..<7).map { i in
+            let s = windowStart.addingTimeInterval(bucketSeconds * Double(i))
+            let e = (i == 6) ? now : windowStart.addingTimeInterval(bucketSeconds * Double(i + 1))
+            return (cal.startOfDay(for: s), e)
+        }
+    }
+
+    static func compute(history: [CompletedSession], range rangeStr: String, now: Date = Date()) -> ProgressMetrics {
+        let range = rangeStr.asTimeRange
+        let cal = Calendar.current
+
+        // Two windows: current (last `days` days) and previous (the equivalent
+        // window immediately before that). The previous window powers the
+        // `▲ N%` delta on the volume card.
+        let windowEnd       = now
+        let windowStart     = now.addingTimeInterval(-TimeInterval(range.days) * 86_400)
+        let prevWindowStart = windowStart.addingTimeInterval(-TimeInterval(range.days) * 86_400)
+
+        let inWindow = history.filter { $0.date >= windowStart && $0.date <= windowEnd }
+        let inPrev   = history.filter { $0.date >= prevWindowStart && $0.date < windowStart }
+
+        let sessionCount  = inWindow.count
+        let activeSeconds = inWindow.reduce(0) { $0 + $1.durationSeconds }
+        let prCount       = inWindow.reduce(0) { $0 + $1.prCount }
+
+        let totalVolume     = sumVolume(inWindow)
+        let prevTotalVolume = sumVolume(inPrev)
+
+        // Bucket sessions onto a 7-cell histogram. Each bucket holds the
+        // sum of session volumes whose `date` falls inside it.
+        let buckets = sevenBuckets(now: now, range: range)
+        var volumePerBucket = [Int](repeating: 0, count: 7)
+        for s in inWindow {
+            if let i = bucketIndex(for: s.date, buckets: buckets) {
+                volumePerBucket[i] += sessionVolume(s)
+            }
+        }
+        // Normalize 0...1 against the local max so the tallest bar is
+        // always full-height (a typical visualization choice — readers
+        // care about *relative* effort, not absolute pounds).
+        let maxV = max(1, volumePerBucket.max() ?? 0)
+        let normalized = volumePerBucket.map { Double($0) / Double(maxV) }
+        let bucketLabels = bucketLabels(for: range, buckets: buckets, cal: cal)
+
+        let topLifts = computeTopLifts(history: inWindow)
+        let coverage = computeCoverage(history: inWindow, buckets: buckets)
+
+        return ProgressMetrics(
+            range: range,
+            sessionCount: sessionCount,
+            activeSeconds: activeSeconds,
+            prCount: prCount,
+            totalVolume: totalVolume,
+            prevTotalVolume: prevTotalVolume,
+            volumeBucketsNormalized: normalized,
+            volumeBucketLabels: bucketLabels,
+            topLifts: topLifts,
+            coverage: coverage
+        )
+    }
+
+    // MARK: helpers
+
+    private static func sumVolume(_ sessions: [CompletedSession]) -> Int {
+        sessions.reduce(0) { $0 + sessionVolume($1) }
+    }
+
+    /// "Volume" = sum of reps × weight across all non-skipped sets in a
+    /// session, on both you and partner sides. This is the standard
+    /// strength-training volume metric (e.g. 5 × 100 = 500).
+    private static func sessionVolume(_ s: CompletedSession) -> Int {
+        let yours    = s.you.reduce(0) { $0 + exerciseVolume($1) }
+        let partners = s.partner.reduce(0) { $0 + exerciseVolume($1) }
+        return yours + partners
+    }
+
+    private static func exerciseVolume(_ ex: CompletedExercise) -> Int {
+        ex.sets.reduce(0) { acc, set in
+            guard !set.skipped else { return acc }
+            return acc + (set.reps * set.weight)
+        }
+    }
+
+    private static func bucketIndex(for date: Date, buckets: [(Date, Date)]) -> Int? {
+        for (i, b) in buckets.enumerated() where date >= b.0 && date < b.1 {
+            return i
+        }
+        // Edge case: a session timestamped at exactly `now` falls past the
+        // last bucket's end (which is also `now`). Snap it into the last
+        // bucket so we don't drop today's volume.
+        if let last = buckets.last, date >= last.0 && date <= last.1 {
+            return buckets.count - 1
+        }
+        return nil
+    }
+
+    private static func bucketLabels(for range: TimeRange, buckets: [(Date, Date)], cal: Calendar) -> [String] {
+        let f = DateFormatter()
+        switch range {
+        case .week:        f.dateFormat = "EEE"      // Mon, Tue, ...
+        case .month:       f.dateFormat = "MMM d"    // Apr 14
+        case .threeMonths: f.dateFormat = "MMM d"
+        case .year:        f.dateFormat = "MMM"      // Jan, Feb, ...
+        }
+        return buckets.map { f.string(from: $0.0) }
+    }
+
+    /// Top 4 strength/bodyweight exercises by total volume in the window.
+    /// "Best" is the heaviest *single set* (weight × reps); delta compares
+    /// the latest occurrence's best to the previous one's best.
+    private static func computeTopLifts(history: [CompletedSession]) -> [TopLift] {
+        // Aggregate by `catalogId`: total volume + every (date, weight, reps)
+        // tuple of non-skipped sets so we can find best & delta.
+        struct Agg {
+            var name: String = ""
+            var totalVolume: Int = 0
+            var attempts: [(date: Date, weight: Int, reps: Int)] = []
+        }
+        var byId: [String: Agg] = [:]
+
+        for session in history {
+            for ex in session.you {
+                var a = byId[ex.catalogId] ?? Agg()
+                a.name = ex.name
+                for set in ex.sets where !set.skipped {
+                    a.totalVolume += set.reps * set.weight
+                    a.attempts.append((session.date, set.weight, set.reps))
+                }
+                byId[ex.catalogId] = a
+            }
+        }
+
+        let topIds = byId.sorted { $0.value.totalVolume > $1.value.totalVolume }.prefix(4)
+        return topIds.compactMap { (_, agg) -> TopLift? in
+            guard !agg.attempts.isEmpty else { return nil }
+            // Best = heaviest single set. For bodyweight (weight==0 across
+            // the board) fall back to most reps.
+            let isBodyweight = agg.attempts.allSatisfy { $0.weight == 0 }
+            let best: (date: Date, weight: Int, reps: Int)
+            if isBodyweight {
+                best = agg.attempts.max(by: { $0.reps < $1.reps })!
+            } else {
+                best = agg.attempts.max(by: { $0.weight < $1.weight })!
+            }
+            // Delta: best from session(s) before `best.date` vs current best.
+            let prior = agg.attempts.filter { $0.date < best.date }
+            let priorBest = isBodyweight
+                ? prior.max(by: { $0.reps < $1.reps })?.reps ?? 0
+                : prior.max(by: { $0.weight < $1.weight })?.weight ?? 0
+            let bestVal = isBodyweight ? best.reps : best.weight
+            let diff = bestVal - priorBest
+            let direction: TrendDirection = diff > 0 ? .up : (diff < 0 ? .down : .flat)
+            let bestStr = isBodyweight
+                ? "\(best.reps) reps"
+                : "\(best.weight) lb × \(best.reps)"
+            let deltaStr: String
+            if priorBest == 0 {
+                deltaStr = "new"
+            } else if diff == 0 {
+                deltaStr = "—"
+            } else {
+                let sign = diff > 0 ? "+" : "−"
+                let unit = isBodyweight ? "" : " lb"
+                deltaStr = "\(sign)\(abs(diff))\(unit)"
+            }
+            return TopLift(name: agg.name, best: bestStr, delta: deltaStr, direction: direction)
+        }
+    }
+
+    /// Muscle-group coverage. For each session, every `CompletedExercise`
+    /// contributes its catalog-mapped muscle groups to that session's
+    /// bucket. Returns the top 6 muscle groups by total touches.
+    private static func computeCoverage(history: [CompletedSession], buckets: [(Date, Date)]) -> [CoverageRow] {
+        // muscle → per-bucket session counts (each unique session once, so
+        // doing 5 chest exercises in one session still only counts once
+        // for "Chest").
+        var counts: [String: [Int]] = [:]   // muscle → [7 ints]
+        for session in history {
+            guard let bIdx = bucketIndex(for: session.date, buckets: buckets) else { continue }
+            // Collect all muscle groups touched by this session via the
+            // catalog (exercises log their `catalogId` at save time).
+            var touched: Set<String> = []
+            for ex in session.you {
+                if let cat = ExerciseCatalog.all.first(where: { $0.id == ex.catalogId }) {
+                    cat.muscleGroups.forEach { touched.insert($0) }
+                }
+            }
+            for muscle in touched {
+                if counts[muscle] == nil {
+                    counts[muscle] = [Int](repeating: 0, count: 7)
+                }
+                counts[muscle]![bIdx] += 1
+            }
+        }
+
+        let rows = counts.map { (muscle, cells) -> CoverageRow in
+            CoverageRow(muscle: muscle, cells: cells, total: cells.reduce(0, +))
+        }
+        return rows.sorted { $0.total > $1.total }.prefix(6).map { $0 }
     }
 }
 
@@ -218,6 +571,8 @@ private struct ChartCard<Content: View>: View {
                         Text(value).font(.system(size: 14, weight: .medium).monospacedDigit()).foregroundColor(Theme.Color.fg)
                         Text(delta).font(Theme.Font.mono(11)).foregroundColor(Theme.Color.accent)
                     }
+                } else if let value {
+                    Text(value).font(.system(size: 14, weight: .medium).monospacedDigit()).foregroundColor(Theme.Color.fg)
                 } else if let meta {
                     Text(meta).font(Theme.Font.mono(10.5)).foregroundColor(Theme.Color.fgSoft)
                 }
@@ -247,53 +602,86 @@ private struct ChartCard<Content: View>: View {
 
 private struct LiftDetailSheet: View {
     let lift: TopLift
+    let history: [CompletedSession]
+
+    /// Pull every set this user has done for the lift. Reverse-chronological,
+    /// most recent first, ignoring skipped sets.
+    private var attempts: [(date: Date, weight: Int, reps: Int, isPR: Bool)] {
+        var out: [(Date, Int, Int, Bool)] = []
+        for s in history.sorted(by: { $0.date > $1.date }) {
+            for ex in s.you where ex.name == lift.name {
+                for set in ex.sets where !set.skipped {
+                    out.append((s.date, set.weight, set.reps, ex.isPR))
+                }
+            }
+        }
+        return out.map { (date: $0.0, weight: $0.1, reps: $0.2, isPR: $0.3) }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Top lift".uppercased()).overlineStyle()
-                Text(lift.name).font(.system(size: 28, weight: .semibold)).foregroundColor(Theme.Color.fg)
-                HStack(spacing: 6) {
-                    Text(lift.best)
-                        .font(.system(size: 14, weight: .medium).monospacedDigit())
-                        .foregroundColor(Theme.Color.fg)
-                    Text("·").foregroundColor(Theme.Color.fgFaint)
-                    Text(lift.delta).font(Theme.Font.mono(12, .medium)).foregroundColor(Theme.Color.accent)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Trend".uppercased()).overlineStyle()
-                LineChartView(
-                    you: [70, 72, 68, 75, 78, 76, 82, 85, 88, 90, 95],
-                    partner: [60, 62, 60, 65, 64, 68, 70, 72, 75, 78, 80]
-                )
-                .frame(height: 160)
-            }
-            .padding(18)
-            .card(padding: 0)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Recent attempts".uppercased()).overlineStyle()
-                ForEach(0..<5) { i in
-                    HStack {
-                        Text("Week \(i + 1)").font(Theme.Font.mono(11)).foregroundColor(Theme.Color.fgSoft)
-                        Spacer()
-                        Text("\(180 + i * 5) lb × \(6 - (i % 2))")
-                            .font(.system(size: 13, weight: .medium).monospacedDigit())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Top lift".uppercased()).overlineStyle()
+                    Text(lift.name).font(.system(size: 28, weight: .semibold)).foregroundColor(Theme.Color.fg)
+                    HStack(spacing: 6) {
+                        Text(lift.best)
+                            .font(.system(size: 14, weight: .medium).monospacedDigit())
                             .foregroundColor(Theme.Color.fg)
+                        Text("·").foregroundColor(Theme.Color.fgFaint)
+                        Text(lift.delta).font(Theme.Font.mono(12, .medium)).foregroundColor(Theme.Color.accent)
                     }
-                    .padding(.vertical, 4)
-                    if i < 4 { Divider().background(Theme.Color.hairline) }
                 }
-            }
-            .padding(16)
-            .card(padding: 0)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Recent attempts".uppercased()).overlineStyle()
+                    if attempts.isEmpty {
+                        Text("No logged sets yet.")
+                            .font(Theme.Font.mono(12))
+                            .foregroundColor(Theme.Color.fgSoft)
+                    } else {
+                        ForEach(Array(attempts.prefix(10).enumerated()), id: \.offset) { i, a in
+                            attemptRow(a)
+                            if i < min(9, attempts.count - 1) {
+                                Divider().background(Theme.Color.hairline)
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+                .card(padding: 0)
+            }
+            .padding(20)
         }
-        .padding(20)
         .background(Theme.Color.bgElev1)
+    }
+
+    private func attemptRow(_ a: (date: Date, weight: Int, reps: Int, isPR: Bool)) -> some View {
+        HStack {
+            Text(formatDate(a.date)).font(Theme.Font.mono(11)).foregroundColor(Theme.Color.fgSoft)
+            Spacer()
+            if a.isPR {
+                Text("PR")
+                    .font(Theme.Font.mono(9, .medium))
+                    .foregroundColor(Theme.Color.pr)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.Color.prDim)
+                    .clipShape(Capsule())
+            }
+            Text(a.weight == 0 ? "\(a.reps) reps" : "\(a.weight) lb × \(a.reps)")
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundColor(Theme.Color.fg)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func formatDate(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d)     { return "Today" }
+        if cal.isDateInYesterday(d) { return "Yesterday" }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f.string(from: d)
     }
 }
 

@@ -34,6 +34,14 @@ struct ScheduleView: View {
     /// assign to the today row when constructing `rows` below.
     private let todayAnchor = "today"
 
+    /// State container for the calendar-button → scroll-to-today bridge.
+    /// We can't capture the `ScrollViewReader`'s `proxy` directly into the
+    /// trailing-toolbar action because the proxy lives inside the body. So
+    /// the calendar button bumps `jumpToTodayTick`, and a `.onChange` on
+    /// the proxy-owning view scrolls. Single-binding bridge, no spooky
+    /// shared state.
+    @State private var jumpToTodayTick = 0
+
     var body: some View {
         VStack(spacing: 0) {
             TopBar(
@@ -41,9 +49,11 @@ struct ScheduleView: View {
                 dateLine: monthLine,
                 trailing: AnyView(
                     IconButton(systemName: "calendar") {
-                        // No-op anchor for now; the scroll-to-today is wired
-                        // via `ScrollViewReader` below. Kept as a button
-                        // because it reads as the conventional "today" affordance.
+                        // Increment the bridge counter; `.onChange` below
+                        // catches it and scrolls the timeline back to
+                        // today. Counter (vs. `Bool.toggle()`) so two
+                        // taps in a row both register.
+                        jumpToTodayTick &+= 1
                     }
                 )
             )
@@ -80,6 +90,11 @@ struct ScheduleView: View {
                     // and future visible — the user sees the timeline goes
                     // both directions without having to scroll first.
                     DispatchQueue.main.async {
+                        proxy.scrollTo(todayAnchor, anchor: .center)
+                    }
+                }
+                .onChange(of: jumpToTodayTick) { _, _ in
+                    withAnimation(.easeInOut(duration: 0.35)) {
                         proxy.scrollTo(todayAnchor, anchor: .center)
                     }
                 }
@@ -268,11 +283,19 @@ struct ScheduleView: View {
 
     // MARK: - Helpers
 
-    /// Mock "is this a planned training day?" predictor — spreads
-    /// `sessionsPerWeek` across Mon-first weekdays. Real implementation
-    /// will consult a recurring-schedule preference once we add one.
+    /// "Is this a planned training day?" predictor. When the user has picked
+    /// explicit weekdays in Goals (`trainingDays`, Mon=0…Sun=6) we honor
+    /// those exactly. Otherwise we fall back to spreading `sessionsPerWeek`
+    /// across Mon-first weekdays as a heuristic.
     private func shouldBePlanned(_ date: Date) -> Bool {
         let weekday = Calendar.current.component(.weekday, from: date) // 1=Sun…7=Sat
+        // Map Mon=0…Sun=6 to the Calendar's 1=Sun…7=Sat space.
+        let monFirstIndex = (weekday + 5) % 7 // Mon=0, Tue=1, …, Sun=6
+
+        if !store.profile.trainingDays.isEmpty {
+            return store.profile.trainingDays.contains(monFirstIndex)
+        }
+
         let perWeek = max(1, min(7, store.profile.sessionsPerWeek))
         let order = [2, 3, 5, 4, 6, 7, 1] // Mon, Tue, Thu, Wed, Fri, Sat, Sun
         let training = Array(order.prefix(perWeek))

@@ -217,6 +217,10 @@ struct ActiveSessionView: View {
         }
         .onAppear {
             sessionStart = Date()
+            // Tell the store we're in-session so `todayState` flips to
+            // `.inProgress` (Today screen drops to the "you're in the
+            // middle of one" view).
+            store.sessionStartedAt = sessionStart
             startTimers()
             seedLiveValues()
             publishLiveSnapshot()
@@ -227,6 +231,7 @@ struct ActiveSessionView: View {
             // doesn't see a ghost workout for the rest of the day.
             // `finishSession` calls `clearLiveSession` *before* this, so
             // the duplicate call here is a no-op.
+            store.sessionStartedAt = nil
             Task { await store.clearLiveSession?() }
         }
         .onChange(of: exerciseIndex) { _, _ in
@@ -497,7 +502,10 @@ struct ActiveSessionView: View {
                 partner: []   // partner session would come from realtime in v1
             )
             store.saveCompletedSession(session)
-            store.regenerateTodayPlan()   // queue tomorrow's session
+            // Refresh `todayPlan` from the planner so the post-session
+            // and home views show *next* session preview if we cross a
+            // day boundary; cache makes this a no-op within the same day.
+            store.regenerateTodayPlan()
         }
         // Tear down the realtime row before navigating away so the
         // partner banner flips to "rest" the moment we hit Finish, not
@@ -858,15 +866,19 @@ private struct ActionDock: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            if isPaired {
+            // Real-time partner status. Reads from the realtime
+            // `live_sessions` channel (`store.partnerActivity`); we hide
+            // the row entirely when the partner isn't currently training,
+            // rather than showing a stale or fake placeholder. Chat is
+            // intentionally not wired in v1 — see `RELEASE.md`.
+            if isPaired, let activity = store.partnerActivity {
                 HStack(spacing: 10) {
                     Avatar(initial: partner.initial, size: 22, tone: .partner)
-                    Text("\(partner.name) · Goblet squat · set 3 of 4")
-                        .font(Theme.Font.sans(12)).foregroundColor(Theme.Color.fgMute)
+                    Text("\(partner.name) · \(activity.compactStatus)")
+                        .font(Theme.Font.sans(12))
+                        .foregroundColor(Theme.Color.fgMute)
+                        .lineLimit(1)
                     Spacer()
-                    IconButton(systemName: "bubble.left", size: 32) {
-                        store.showToast("Quick chat with \(partner.name) coming soon", icon: "bubble.left.fill")
-                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Theme.Color.bgElev2)

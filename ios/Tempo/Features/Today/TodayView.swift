@@ -18,10 +18,11 @@ struct TodayView: View {
             )
             .padding(.top, 8)
 
-            // Demo-only state switcher. In Release we let the real
-            // session state (computed from history + plan) drive the
-            // shown sub-view; the picker would otherwise be a
-            // confusing god-mode toggle for end users.
+            // Demo-only state switcher. Release derives the state from
+            // `store.recomputeTodayState()` (active session in progress?
+            // session already done today? scheduled rest day?), so the
+            // picker would just be a confusing god-mode toggle for
+            // external testers. Internal builds keep it for debugging.
             #if DEBUG
             StatePicker(selection: $store.todayState)
                 .padding(.horizontal, 20)

@@ -140,60 +140,126 @@ private struct FrequencyScreen: View {
     @Binding var profile: UserProfile
     var onContinue: () -> Void
 
+    private let dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+    private let dayShort  = ["M","T","W","T","F","S","S"]
+
+    /// Becomes true the first time the user empties their selection (or hits
+    /// Continue with nothing picked). Used to surface the inline error and
+    /// nudge the day row with a shake.
+    @State private var showError = false
+    @State private var shakeNonce = 0
+
+    private var isValid: Bool { !profile.trainingDays.isEmpty }
+
     var body: some View {
         ScaffoldHead(stepLabel: "Goals · 2 of 5",
-                     title: "How many days\nper week?",
-                     subtitle: "Be honest. Your AI trainer plans around what you'll actually do.") {
-            VStack(spacing: 18) {
-                Text("\(profile.sessionsPerWeek)")
-                    .font(.system(size: 80, weight: .semibold).monospacedDigit())
-                    .kerning(-3)
-                    .foregroundColor(Theme.Color.fg)
-                Text("days per week").labelStyle()
+                     title: "Which days\ndo you train?",
+                     subtitle: "Tap the days you'll actually show up. Your AI trainer plans around them.") {
 
-                Slider(
-                    value: Binding(
-                        get: { Double(profile.sessionsPerWeek) },
-                        set: { profile.sessionsPerWeek = Int($0.rounded()) }
-                    ),
-                    in: 1...7, step: 1
-                )
-                .tint(Theme.Color.accent)
-                .padding(.horizontal, 12)
-
-                HStack {
-                    ForEach(1...7, id: \.self) { i in
-                        Text("\(i)").font(Theme.Font.mono(11)).foregroundColor(Theme.Color.fgFaint)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal, 6)
-            }
-            .padding(.vertical, 14)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Likely week").labelStyle()
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your training week").labelStyle()
+                HStack(spacing: 8) {
                     ForEach(0..<7, id: \.self) { i in
-                        let isOn = i < profile.sessionsPerWeek
-                        Text(["M","T","W","T","F","S","S"][i])
-                            .font(Theme.Font.mono(11, .medium))
-                            .foregroundColor(isOn ? Theme.Color.accent : Theme.Color.fgFaint)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(isOn ? Theme.Color.accentDim : Theme.Color.bgElev2)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(isOn ? Theme.Color.accentRing : Theme.Color.hairline, lineWidth: 1))
+                        dayButton(i)
                     }
                 }
-                Text("Your AI trainer will pick exact days based on your typical schedule")
-                    .font(Theme.Font.mono(10.5))
-                    .foregroundColor(Theme.Color.fgFaint)
+                .modifier(ShakeEffect(animatableData: CGFloat(shakeNonce)))
+            }
+            .padding(.vertical, 8)
+
+            if isValid {
+                HStack(spacing: 6) {
+                    Text("\(profile.trainingDays.count)")
+                        .font(.system(size: 28, weight: .semibold).monospacedDigit())
+                        .foregroundColor(Theme.Color.fg)
+                    Text(profile.trainingDays.count == 1 ? "day per week" : "days per week")
+                        .font(Theme.Font.sans(14))
+                        .foregroundColor(Theme.Color.fgMute)
+                    Spacer()
+                }
+            } else if showError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.Color.dangerSoft)
+                    Text("Pick at least one day to keep going.")
+                        .font(Theme.Font.sans(13))
+                        .foregroundColor(Theme.Color.dangerSoft)
+                    Spacer()
+                }
+            } else {
+                Text("Pick at least one day.")
+                    .font(Theme.Font.sans(13))
+                    .foregroundColor(Theme.Color.fgMute)
             }
 
             Spacer(minLength: 12)
-            PrimaryCTA(title: "Continue", trailingSystemImage: "arrow.right", tall: true, action: onContinue)
+            PrimaryCTA(title: "Continue", trailingSystemImage: "arrow.right", tall: true) {
+                guard isValid else {
+                    showError = true
+                    withAnimation(.default) { shakeNonce += 1 }
+                    return
+                }
+                onContinue()
+            }
+            .opacity(isValid ? 1 : 0.5)
         }
+    }
+
+    private func dayButton(_ i: Int) -> some View {
+        let on = profile.trainingDays.contains(i)
+        return Button(action: { toggle(i) }) {
+            VStack(spacing: 6) {
+                Text(dayShort[i])
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(on ? Theme.Color.accent : Theme.Color.fg)
+                Text(dayLabels[i].uppercased())
+                    .font(Theme.Font.mono(9, .medium))
+                    .tracking(0.6)
+                    .foregroundColor(on ? Theme.Color.accent : Theme.Color.fgFaint)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 72)
+            .background(on ? Theme.Color.accentDim : Theme.Color.bgElev2)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(borderColor(on: on), lineWidth: 1))
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func borderColor(on: Bool) -> Color {
+        if on { return Theme.Color.accentRing }
+        // Tint the empty cells red while the error is visible, so the user
+        // can see *what* needs their attention without reading the message.
+        if showError && !isValid { return Theme.Color.danger.opacity(0.4) }
+        return Theme.Color.hairline
+    }
+
+    private func toggle(_ i: Int) {
+        if profile.trainingDays.contains(i) {
+            profile.trainingDays.remove(i)
+        } else {
+            profile.trainingDays.insert(i)
+        }
+        profile.sessionsPerWeek = max(1, profile.trainingDays.count)
+        // Clear the error as soon as they have a valid selection again, but
+        // surface it the moment they drop back to zero so they're not left
+        // wondering why Continue isn't doing anything.
+        showError = !isValid
+    }
+}
+
+/// Horizontal shake — bumped via an Int nonce to retrigger after each
+/// invalid Continue tap. Pure SwiftUI, no haptics required.
+private struct ShakeEffect: GeometryEffect {
+    var amount: CGFloat = 8
+    var shakesPerUnit: CGFloat = 3
+    var animatableData: CGFloat
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let dx = amount * sin(animatableData * .pi * shakesPerUnit)
+        return ProjectionTransform(CGAffineTransform(translationX: dx, y: 0))
     }
 }
 

@@ -10,7 +10,12 @@ struct RootView: View {
     @State private var showActiveSession = false
     @State private var showPostSession = false
     @State private var showPR = false
-    @State private var prPayload: PRPayload = PRPayload(name: "Back squat", reps: 6, weight: 200, previous: 195)
+    /// PR overlay payload. Set by the active session's `onPR` from a real
+    /// logged set (`name`, `reps`, `weight` are live values; `previous`
+    /// is read off `store.bestLift`). The debug demo path also synthesizes
+    /// one from history. Default is an empty placeholder — never shown
+    /// because `showPR` only flips after a real assignment.
+    @State private var prPayload: PRPayload = PRPayload(name: "", reps: 0, weight: 0, previous: 0)
     @EnvironmentObject var store: SessionStore
 
     enum Tab: String, CaseIterable, Hashable {
@@ -132,14 +137,46 @@ struct RootView: View {
         showInvite = true
     }
 
+    /// Build a PR payload for the DEBUG demo route. Walks the user's
+    /// completed history backwards looking for the first entry flagged
+    /// `isPR` and surfaces those real numbers. Falls back to today's
+    /// first planned exercise (with zero history) so brand-new accounts
+    /// still see something coherent.
+    private func demoPRPayload() -> PRPayload {
+        for s in store.history {
+            for ex in s.you where ex.isPR {
+                let bestSet = ex.sets.max(by: { $0.weight < $1.weight }) ?? ex.sets.first
+                let weight = bestSet?.weight ?? 0
+                let reps = bestSet?.reps ?? 0
+                return PRPayload(
+                    name: ex.name,
+                    reps: reps,
+                    weight: weight,
+                    previous: max(0, weight - 5)
+                )
+            }
+        }
+        let first = store.todayPlan.youPlan.first
+        return PRPayload(
+            name: first?.name ?? "Lift",
+            reps: first?.reps ?? 0,
+            weight: first?.weight ?? 0,
+            previous: 0
+        )
+    }
+
     @ViewBuilder
     private var tabContent: some View {
         switch tab {
         case .today:
             TodayView(
                 onStart:     { showActiveSession = true },
+                // DEBUG-only "PR moment" demo. We synthesize a payload
+                // from the most recent PR in history so the UI still
+                // shows real numbers, falling back to a placeholder
+                // only for a brand-new account with zero sessions.
                 onPR:        {
-                    prPayload = PRPayload(name: "Back squat", reps: 6, weight: 200, previous: 195)
+                    prPayload = demoPRPayload()
                     showPR = true
                 },
                 onPost:      { showPostSession = true },

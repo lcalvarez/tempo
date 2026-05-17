@@ -139,10 +139,11 @@ enum StretchArea: String, CaseIterable, Codable, Identifiable {
 
 // MARK: - Custom user exercises
 
-/// User-defined exercise. Stored on the profile (locally for now, syncs
-/// to Supabase later as one row per entry). Surfaced everywhere the catalog
-/// is — manual-mode picker, in-session add, and the AI planner picks them
-/// up via `ExerciseCatalog.resolve` if the user assigned muscle groups.
+/// User-defined exercise. Persists on the profile row as a JSONB column
+/// (`profile_custom_exercises` migration; round-tripped via `SupabaseDTOs`)
+/// so it syncs across devices. Surfaced everywhere the catalog is —
+/// manual-mode picker, in-session add, and the AI planner picks them up
+/// via `ExerciseCatalog.resolve` if the user assigned muscle groups.
 struct CustomExercise: Identifiable, Codable, Hashable {
     /// Stable string ID (`custom_<uuid>`) so it can sit alongside catalog
     /// IDs in `manualExerciseIds`, completed-session exercises, etc.
@@ -313,6 +314,11 @@ struct UserProfile: Codable {
     // Goals
     var focuses: Set<TrainingFocus> = [.strength, .hypertrophy]
     var sessionsPerWeek: Int = 4
+    /// Which weekdays the user trains on (0 = Mon … 6 = Sun). Source of
+    /// truth for the new day-picker UX; `sessionsPerWeek` is kept in sync
+    /// from `trainingDays.count` so callers (DB, Profile, Schedule) that
+    /// only care about the count keep working.
+    var trainingDays: Set<Int> = [0, 1, 3, 4]
     var intensity: Intensity = .moderate
     var enjoyedStyles: Set<String> = ["Free weights", "Conditioning"]
     var avoidedStyles: Set<String> = ["Long cardio"]
@@ -331,10 +337,46 @@ struct UserProfile: Codable {
     /// User-defined exercises. Available everywhere the catalog is.
     var customExercises: [CustomExercise] = []
 
+    /// Optional profile photo, stored as compressed JPEG bytes. Local-only
+    /// for v1 — server upload + CDN URL lands in v1.1 alongside the
+    /// `profiles.avatar_url` migration. Nil means "use the monogram".
+    /// Encoded inline in the local UserDefaults JSON; the size is bounded
+    /// by `OnboardingPhotoPicker` (~512×512 JPEG, ~50 KB).
+    var avatarData: Data? = nil
+
     /// Extra body areas the user has added to the stretching picker beyond
     /// the canonical `StretchArea` list. Persists across sessions so frequent
     /// areas show up as one-tap chips next time.
     var customStretchAreas: [String] = []
+
+    // ── Preferences (Profile → Preferences / Advanced) ───────────────
+    //
+    // Persist locally only (UserDefaults via `SessionStore.persist`).
+    // We don't sync these to Supabase because they're per-device
+    // expectations — "RPE field on this iPhone" doesn't have to mean
+    // "RPE field on the iPad too". If we change our mind, just add
+    // them to `ProfileRow` / `SupabaseDTOs` and lift them in the same
+    // PATCH path the rest of the profile uses.
+
+    /// Whether to fire a local notification 20 min before scheduled start.
+    var sessionRemindersEnabled: Bool = true
+
+    /// Whether to surface partner-activity toasts/banners (they finish a
+    /// PR, complete a session, etc.).
+    var partnerActivityNotifs: Bool = true
+
+    /// Whether to show the RPE (rate of perceived exertion) field per
+    /// set in the active-session UI.
+    var showRPE: Bool = false
+
+    /// Whether the plate calculator overlay is shown next to weight inputs.
+    var plateCalcEnabled: Bool = true
+
+    /// Whether the AI planner tiers (Foundation Models / Anthropic) are
+    /// allowed to run. When `false` we always fall through to the
+    /// heuristic — useful when the user wants determinism (or on a
+    /// metered connection). Defaults to `true`.
+    var aiPlanningEnabled: Bool = true
 
     /// What we display for "you" everywhere (chips, plan columns, comparison
     /// rows, etc.). Falls back to "You" when name hasn't been entered yet.
@@ -440,24 +482,36 @@ enum RelationshipSection: String, CaseIterable {
 /// Postgres row; we read the parts we need (goals, level, equipment) via
 /// the `my_partner` view to plan an independent session for them.
 struct PartnerProfile: Codable {
-    var name: String = "Andrea"
-    var initial: String { String(name.prefix(1)).uppercased() }
-    var pairedSinceISO: String = "Mar 28"
-    var online: Bool = true
-    var totalSessions: Int = 23
-    var togetherTimeMinutes: Int = 1144   // 19h 04m
-    var jointPRs: Int = 7
+    /// Empty until pairing completes and `SyncStore.fetchPartner()` populates
+    /// it. Views that show partner copy must either (a) gate on
+    /// `SessionStore.isPaired` or (b) read `displayName` to get a graceful
+    /// "Your partner" fallback. Never hardcode a seeded name here — it leaks
+    /// into Today, History, Post-session, etc. on fresh installs.
+    var name: String = ""
+    var initial: String { name.isEmpty ? "?" : String(name.prefix(1)).uppercased() }
+    /// Friendly fallback for any view that hasn't been gated on `isPaired`.
+    var displayName: String { name.isEmpty ? "Your partner" : name }
+    var pairedSinceISO: String = ""
+    /// Real timestamp the partnership was created, used for `daysPaired`
+    /// computation. `pairedSinceISO` is the human-readable label
+    /// ("Mar 28") shown next to the partner header. `nil` until the
+    /// remote partner sync has populated it.
+    var pairedSinceDate: Date? = nil
+    var online: Bool = false
+    var totalSessions: Int = 0
+    var togetherTimeMinutes: Int = 0
+    var jointPRs: Int = 0
 
     // ── The partner's own goals/level (drives independent planning) ──────
     //
     // These mirror the equivalents on `UserProfile`. They're populated by
-    // `SyncStore.fetchPartner()` against Supabase; default values exist so
-    // the seeded demo partner ("Andrea") can showcase a goal-divergent pair
-    // out-of-the-box.
+    // `SyncStore.fetchPartner()` against Supabase. Defaults are
+    // intentionally *neutral* — `focuses` empty means the planner falls
+    // back to the user's plan rather than fabricating divergence.
     var fitnessLevel: FitnessLevel = .some
-    var focuses: Set<TrainingFocus> = [.endurance, .general]   // diverges from default user (.strength + .hypertrophy)
+    var focuses: Set<TrainingFocus> = []
     var intensity: Intensity = .moderate
-    var equipment: Set<String> = ["Full gym"]
+    var equipment: Set<String> = []
     var avoidedStyles: Set<String> = []
 
     /// What I call this person. `nil` means "not yet picked" — UI should
@@ -592,9 +646,13 @@ struct Partner {
     var online: Bool
 }
 
-// MARK: - Mock AI planner
+// MARK: - Heuristic planner (fallback)
 
-/// Generates a session plan for both partners.
+/// Rule-based session planner. Real "AI" tiers (Apple Foundation Models on
+/// iOS 26+, Anthropic Sonnet 4.5 via Edge Function) live in the `AI/`
+/// folder; this is the deterministic fallback that runs when those tiers
+/// are unavailable or fail validation. `HeuristicPlanProvider` wraps it
+/// so `PlannerService` can treat it as just another tier.
 ///
 /// Each side gets its **own** theme generated from its **own** focuses,
 /// fitness level, intensity, and avoided styles. There's no goal mirroring
@@ -871,6 +929,12 @@ final class SessionStore: ObservableObject {
         didSet {
             persist(profile, forKey: K.profile)
             onProfileMutated?()
+            // `trainingDays` (rest-day calendar) lives on profile; a flip
+            // from "today is a workout day" to "today is rest" should
+            // re-derive `todayState` immediately so Today swaps copy.
+            if oldValue.trainingDays != profile.trainingDays {
+                recomputeTodayState()
+            }
         }
     }
 
@@ -923,17 +987,31 @@ final class SessionStore: ObservableObject {
     }
 
     @Published var history: [CompletedSession] {
-        didSet { persist(history, forKey: K.history) }
+        didSet {
+            persist(history, forKey: K.history)
+            recomputeTodayState()
+        }
     }
 
+    /// Derived from the active session + today's plan + history. Setters
+    /// elsewhere in this class call `recomputeTodayState()` after every
+    /// meaningful change so the UI is always in sync without `TodayView`
+    /// needing to know the rules.
     @Published var todayState: TodayState = .ready
+
+    /// Which planner produced `todayPlan`. Surfaced in Profile → Planning so
+    /// users can see whether they're on Apple's on-device model, the server
+    /// LLM, or the heuristic fallback. Empty until the first generation.
+    @Published var lastPlannerLabel: String = ""
 
     // Active session (transient; not persisted between launches)
     @Published var youProgressPct: Double = 0
     @Published var partnerProgressPct: Double = 22
     @Published var elapsed: String = "00:00"
     @Published var currentExerciseIndex: Int = 1
-    @Published var sessionStartedAt: Date? = nil
+    @Published var sessionStartedAt: Date? = nil {
+        didSet { recomputeTodayState() }
+    }
 
     /// What the paired partner is doing *right now*, as observed via the
     /// realtime channel on `public.live_sessions`. `nil` whenever the
@@ -989,7 +1067,11 @@ final class SessionStore: ObservableObject {
         self.partner = Self.read(PartnerProfile.self, key: K.partner) ?? PartnerProfile()
         self.history = Self.read([CompletedSession].self, key: K.history) ?? []
 
-        // Generate or restore today's plan
+        // Generate or restore today's plan. The synchronous heuristic is
+        // fine for the very first paint; a real AI generation kicks off
+        // from `TempoApp` once auth resolves, populating
+        // `lastPlannerLabel` and overwriting `todayPlan` if the AI tier
+        // produced something different.
         if let plan = Self.read(SessionPlan.self, key: K.todayPlan),
            Calendar.current.isDateInToday(plan.generatedAt) {
             self.todayPlan = plan
@@ -999,6 +1081,11 @@ final class SessionStore: ObservableObject {
                 partner: Self.read(PartnerProfile.self, key: K.partner) ?? PartnerProfile()
             )
         }
+
+        // Initial state derivation. Callers that mutate `history`,
+        // `sessionStartedAt`, or `profile.trainingDays` afterwards trigger
+        // their own `recomputeTodayState()` via `didSet`.
+        recomputeTodayState()
     }
 
     // MARK: actions
@@ -1019,11 +1106,84 @@ final class SessionStore: ObservableObject {
         partnershipId = nil
         partnerUserId = nil
         history = []
+        lastPlannerLabel = ""
+        // Clear the AI plan cache too — otherwise a debug "reset" leaves
+        // yesterday's user's plan around for the freshly-blank profile.
+        // The cache is `@MainActor`-isolated so we hop over.
+        Task { @MainActor in
+            PlannedDayCache.shared.clearAll()
+        }
         regenerateTodayPlan()
     }
 
+    /// Regenerate today's session through the tiered `PlannerService`.
+    /// Walks Apple Foundation Models → Anthropic Edge Function → heuristic
+    /// fallback, applying the once-per-day cache so we never spend two AI
+    /// calls in a single calendar day.
+    ///
+    /// Fire-and-forget: callers that don't need to await the result (most
+    /// don't — the UI binds to `@Published var todayPlan`) should use this
+    /// shape. The toast logic lives here so any call site that taps
+    /// "Regenerate plan" gets the "today's plan is set" affordance for
+    /// free.
     func regenerateTodayPlan() {
-        todayPlan = PlanGenerator.generateNextSession(for: profile, partner: partner)
+        Task { await self.regenerateTodayPlanAsync(announce: true) }
+    }
+
+    /// Awaitable variant. Used at app boot (after auth resolves) and from
+    /// onboarding-complete so the first session render has the AI plan.
+    /// `announce` controls whether a toast is shown when the cache hits —
+    /// we suppress it on cold-launch boot so the user doesn't see a
+    /// random "today's plan is set" on first open.
+    @discardableResult
+    func regenerateTodayPlanAsync(announce: Bool = false) async -> PlannerService.Result {
+        let result = await PlannerService.shared.generate(
+            user: profile,
+            partner: partner
+        )
+        todayPlan = result.plan
+        lastPlannerLabel = result.providerLabel
+        if announce && result.fromCache {
+            showToast("Today's plan is set — check back tomorrow",
+                      icon: "sparkles")
+        }
+        recomputeTodayState()
+        return result
+    }
+
+    /// Recompute `todayState` from the live signals: an active session in
+    /// progress, a session already completed today, and whether today is a
+    /// rest day in the user's `trainingDays` schedule. Single source of
+    /// truth — every mutation that could flip the state calls this.
+    func recomputeTodayState() {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        if sessionStartedAt != nil {
+            todayState = .inProgress
+            return
+        }
+
+        let didOneToday = history.contains { cal.isDate($0.date, inSameDayAs: today) }
+        if didOneToday {
+            // We've already finished today's session — show rest-day copy
+            // so the user gets recovery guidance + a "plan an extra
+            // session" affordance.
+            todayState = .rest
+            return
+        }
+
+        // `trainingDays` is 0=Mon … 6=Sun. Calendar.current.weekday is
+        // 1=Sun … 7=Sat, so we map.
+        let weekday = cal.component(.weekday, from: today)
+        let mondayBased = (weekday + 5) % 7   // Mon→0, Sun→6
+        if !profile.trainingDays.isEmpty,
+           !profile.trainingDays.contains(mondayBased) {
+            todayState = .rest
+            return
+        }
+
+        todayState = .ready
     }
 
     /// Append an exercise to today's plan. Used by the in-session add flow
@@ -1129,12 +1289,20 @@ final class SessionStore: ObservableObject {
     /// `RemoteSync.refreshAll()`. The mediator wraps this in
     /// `isApplyingRemote = true/false` to suppress the round-trip echo.
     ///
-    /// Server is authoritative for every field on `UserProfile`. The only
-    /// reason this isn't a straight `profile = remote` assignment is so we
-    /// emit a single `didSet` (assigning a struct fires once, even if many
-    /// fields change underneath).
+    /// Server is authoritative for the *synced* `UserProfile` fields; the
+    /// per-device preference toggles (RPE field, plate calc, AI on/off,
+    /// reminders, partner-activity notifs) live only on this device, so
+    /// we copy them off the current `profile` and back onto the remote
+    /// snapshot before storing it. This way a `refreshAll` doesn't reset
+    /// "I turned RPE off on this phone".
     func applyRemoteProfile(_ remote: UserProfile, hasOnboarded: Bool) {
-        profile = remote
+        var merged = remote
+        merged.sessionRemindersEnabled = profile.sessionRemindersEnabled
+        merged.partnerActivityNotifs   = profile.partnerActivityNotifs
+        merged.showRPE                 = profile.showRPE
+        merged.plateCalcEnabled        = profile.plateCalcEnabled
+        merged.aiPlanningEnabled       = profile.aiPlanningEnabled
+        profile = merged
         if self.hasOnboarded != hasOnboarded {
             self.hasOnboarded = hasOnboarded
         }
@@ -1180,10 +1348,16 @@ final class SessionStore: ObservableObject {
 
     /// Apply (or clear) a freshly-arrived partner activity snapshot from
     /// the realtime channel. Idempotent — same row written twice doesn't
-    /// trigger `objectWillChange` because of `Equatable`.
+    /// trigger `objectWillChange` because of `Equatable`. Also flips the
+    /// partner's `online` dot based on whether a live row exists at all
+    /// (presence proxy — we treat "publishing live_sessions" as "online").
     func applyPartnerActivity(_ activity: PartnerActivity?) {
         if partnerActivity != activity {
             partnerActivity = activity
+        }
+        let nowOnline = (activity != nil)
+        if partner.online != nowOnline {
+            partner.online = nowOnline
         }
     }
 
@@ -1208,7 +1382,16 @@ final class SessionStore: ObservableObject {
         p.relationshipLabel  = relationshipLabel
         p.relationshipCustom = relationshipCustom
         p.pairedSinceISO     = Self.dayLabel(pairedSince)
-        p.online             = true   // realtime presence is wired in a later phase
+        // Live presence is driven by `partnerActivity` (populated by
+        // `RemoteSync.subscribeToPartnerLive`). If we already have a
+        // live row for *this* partner, treat them as online; otherwise
+        // default to false. We do NOT carry forward `partner.online`
+        // from a stale prior `PartnerProfile` — that would risk
+        // showing the wrong partner as online after a partner swap.
+        p.online             = partnerActivity?.partnerUserId == partnerUserId
+        // Keep paired-since as a real timestamp too so Profile can compute
+        // `daysPaired` without parsing the friendly day label.
+        p.pairedSinceDate    = pairedSince
         partner              = p
         self.partnerUserId   = partnerUserId
         self.partnershipId   = partnershipId

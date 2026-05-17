@@ -227,8 +227,19 @@ struct TempoApp: App {
                     // if the scene reattaches (it doesn't on iOS today), this
                     // simply reinstalls the same closures.
                     remote.attach(session: session)
+                    // Bridge the AI planner to the live auth state + AI
+                    // toggle. We capture closures (not the values) so the
+                    // service always sees the current `currentUserId`.
+                    PlannerService.shared.resolveUserId = { [auth] in auth.currentUserId }
+                    PlannerService.shared.aiEnabled = { [session] in session.profile.aiPlanningEnabled }
                     // Pull the canonical state from the server. Backend wins.
                     await remote.refreshAll()
+                    // Trigger today's AI plan generation (or a cache hit).
+                    // Suppress the "plan is set" toast on cold launch — the
+                    // user didn't ask for it; they just opened the app.
+                    if session.hasOnboarded {
+                        await session.regenerateTodayPlanAsync(announce: false)
+                    }
                     // Install the deep-link bridge and drain any queued URLs
                     // that arrived before the scene was ready.
                     DeepLinkAppDelegate.handler = { url in
